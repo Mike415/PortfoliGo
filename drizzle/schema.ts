@@ -93,6 +93,7 @@ export const positions = mysqlTable("positions", {
   currentValue: decimal("currentValue", { precision: 18, scale: 2 }).default("0.00"),
   unrealizedPnl: decimal("unrealizedPnl", { precision: 18, scale: 2 }).default("0.00"),
   unrealizedPnlPct: decimal("unrealizedPnlPct", { precision: 10, scale: 4 }).default("0.0000"),
+  isShort: int("isShort").notNull().default(0), // 1 = short position
   lastPricedAt: timestamp("lastPricedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -107,7 +108,7 @@ export const trades = mysqlTable("trades", {
   sleeveId: int("sleeveId").notNull(),
   ticker: varchar("ticker", { length: 32 }).notNull(),
   assetType: mysqlEnum("assetType", ["stock", "etf", "crypto"]).notNull().default("stock"),
-  side: mysqlEnum("side", ["buy", "sell"]).notNull(),
+  side: mysqlEnum("side", ["buy", "sell", "short", "cover"]).notNull(),
   quantity: decimal("quantity", { precision: 20, scale: 8 }).notNull(),
   price: decimal("price", { precision: 18, scale: 6 }).notNull(),
   totalValue: decimal("totalValue", { precision: 18, scale: 2 }).notNull(),
@@ -161,6 +162,20 @@ export const priceCache = mysqlTable("price_cache", {
 });
 
 export type PriceCache = typeof priceCache.$inferSelect;
+
+// ─── Portfolio Snapshots ────────────────────────────────────────────────────────
+export const portfolioSnapshots = mysqlTable("portfolio_snapshots", {
+  id: int("id").autoincrement().primaryKey(),
+  sleeveId: int("sleeveId").notNull(),
+  totalValue: decimal("totalValue", { precision: 18, scale: 2 }).notNull(),
+  positionsValue: decimal("positionsValue", { precision: 18, scale: 2 }).notNull(),
+  cashBalance: decimal("cashBalance", { precision: 18, scale: 2 }).notNull(),
+  returnPct: decimal("returnPct", { precision: 10, scale: 4 }).notNull().default("0.0000"),
+  snapshotAt: timestamp("snapshotAt").defaultNow().notNull(),
+});
+
+export type PortfolioSnapshot = typeof portfolioSnapshots.$inferSelect;
+export type InsertPortfolioSnapshot = typeof portfolioSnapshots.$inferInsert;
 
 // ─── Sessions ─────────────────────────────────────────────────────────────────
 export const sessions = mysqlTable("sessions", {

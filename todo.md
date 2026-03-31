@@ -79,3 +79,13 @@
 
 ## Bug Fixes
 - [x] Fix: Leaderboard Portfolio Value incorrect after Refresh (shows wrong total/return %)
+
+## New Features (Round 2)
+- [ ] DB: portfolio_snapshots table (sleeveId, totalValue, positionsValue, cashBalance, returnPct, snapshotAt)
+- [ ] Backend: save snapshot on every price refresh (single-sleeve and all-sleeves)
+- [ ] Backend: getSnapshots procedure returning time-series for a sleeve
+- [ ] Frontend: Recharts equity curve (area chart) on Sleeve Manager showing total value over time
+- [ ] Frontend: "Last refreshed" timestamp badge on leaderboard header
+- [ ] DB: isShort flag on positions and trades tables
+- [ ] Backend: short trade logic (sell-to-open increases cash, buy-to-cover reduces cash, P&L inverted)
+- [ ] Frontend: Short toggle in trade form with visual indicator on position rows
