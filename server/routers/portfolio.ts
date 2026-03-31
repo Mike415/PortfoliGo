@@ -314,11 +314,14 @@ export const portfolioRouter = router({
           const existingCost = parseFloat(existingPos.avgCostBasis);
           const newQty = existingQty + input.quantity;
           const newAvgCost = (existingQty * existingCost + input.quantity * input.price) / newQty;
+          const newCurrentValue = newQty * input.price;
 
           await db.upsertPosition({
             ...existingPos,
             quantity: String(newQty),
             avgCostBasis: String(newAvgCost),
+            currentPrice: String(input.price),
+            currentValue: String(newCurrentValue),
           });
         } else {
           await db.upsertPosition({
@@ -327,12 +330,21 @@ export const portfolioRouter = router({
             assetType,
             quantity: String(input.quantity),
             avgCostBasis: String(input.price),
+            currentPrice: String(input.price),
+            currentValue: String(totalValue),
             isShort: 0,
           });
         }
 
+        const newCash = cashBalance - totalValue;
+        // Recalculate positionsValue from all positions after this trade
+        // Re-fetch all positions to get updated currentValue after upsert
+        const freshPositions = await db.getPositionsForSleeve(sleeve.id);
+        const positionsValueCalc = freshPositions.reduce((sum, p) => sum + (p.currentValue ? parseFloat(p.currentValue) : 0), 0);
         await db.updateSleeve(sleeve.id, {
-          cashBalance: String(cashBalance - totalValue),
+          cashBalance: String(newCash),
+          positionsValue: String(positionsValueCalc),
+          totalValue: String(newCash + positionsValueCalc),
         });
 
       } else if (input.side === "sell") {
@@ -356,14 +368,24 @@ export const portfolioRouter = router({
         if (newQty < 0.000001) {
           await db.deletePosition(existingPos.id);
         } else {
-          await db.upsertPosition({ ...existingPos, quantity: String(newQty) });
+          await db.upsertPosition({
+            ...existingPos,
+            quantity: String(newQty),
+            currentPrice: String(input.price),
+            currentValue: String(newQty * input.price),
+          });
         }
 
         const cashBalance = parseFloat(sleeve.cashBalance);
         const currentRealizedPnl = parseFloat(sleeve.realizedPnl);
+        const newCashSell = cashBalance + totalValue;
+        const freshPosSell = await db.getPositionsForSleeve(sleeve.id);
+        const posValSell = freshPosSell.reduce((sum, p) => sum + (p.currentValue ? parseFloat(p.currentValue) : 0), 0);
         await db.updateSleeve(sleeve.id, {
-          cashBalance: String(cashBalance + totalValue),
+          cashBalance: String(newCashSell),
           realizedPnl: String(currentRealizedPnl + realizedPnl),
+          positionsValue: String(posValSell),
+          totalValue: String(newCashSell + posValSell),
         });
 
       } else if (input.side === "short") {
@@ -388,6 +410,8 @@ export const portfolioRouter = router({
             ...existingPos,
             quantity: String(newQty),
             avgCostBasis: String(newAvgCost),
+            currentPrice: String(input.price),
+            currentValue: String(newQty * input.price),
           });
         } else {
           await db.upsertPosition({
@@ -396,13 +420,20 @@ export const portfolioRouter = router({
             assetType,
             quantity: String(input.quantity),
             avgCostBasis: String(input.price),
+            currentPrice: String(input.price),
+            currentValue: String(totalValue),
             isShort: 1,
           });
         }
 
-        // Short proceeds credited to cash
+        // Short proceeds credited to cash; recalculate sleeve totals
+        const newCashShort = cashBalance + totalValue;
+        const freshPosShort = await db.getPositionsForSleeve(sleeve.id);
+        const posValShort = freshPosShort.reduce((sum, p) => sum + (p.currentValue ? parseFloat(p.currentValue) : 0), 0);
         await db.updateSleeve(sleeve.id, {
-          cashBalance: String(cashBalance + totalValue),
+          cashBalance: String(newCashShort),
+          positionsValue: String(posValShort),
+          totalValue: String(newCashShort + posValShort),
         });
 
       } else if (input.side === "cover") {
@@ -436,13 +467,23 @@ export const portfolioRouter = router({
         if (newQty < 0.000001) {
           await db.deletePosition(existingPos.id);
         } else {
-          await db.upsertPosition({ ...existingPos, quantity: String(newQty) });
+          await db.upsertPosition({
+            ...existingPos,
+            quantity: String(newQty),
+            currentPrice: String(input.price),
+            currentValue: String(newQty * input.price),
+          });
         }
 
         const currentRealizedPnl = parseFloat(sleeve.realizedPnl);
+        const newCashCover = cashBalance - totalValue;
+        const freshPosCover = await db.getPositionsForSleeve(sleeve.id);
+        const posValCover = freshPosCover.reduce((sum, p) => sum + (p.currentValue ? parseFloat(p.currentValue) : 0), 0);
         await db.updateSleeve(sleeve.id, {
-          cashBalance: String(cashBalance - totalValue),
+          cashBalance: String(newCashCover),
           realizedPnl: String(currentRealizedPnl + realizedPnl),
+          positionsValue: String(posValCover),
+          totalValue: String(newCashCover + posValCover),
         });
       }
 
@@ -514,7 +555,8 @@ export const portfolioRouter = router({
       const ranked = entries.map((e, i) => ({ ...e, rank: i + 1 }));
 
       const totalPortfolioValue = ranked.reduce((sum, e) => sum + e.totalValue, 0);
-      const startingCapital = group ? parseFloat(group.totalCapital) : 1000000;
+      // Use sum of actual sleeve allocatedCapitals as the baseline (not group.totalCapital which may differ)
+      const startingCapital = ranked.reduce((sum, e) => sum + e.allocatedCapital, 0) || (group ? parseFloat(group.totalCapital) : 1000000);
 
       // Last refreshed = most recent lastPricedAt across all sleeves
       const lastRefreshed = ranked

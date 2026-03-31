@@ -80,6 +80,8 @@
 - [ ] Push Railway-ready build to GitHub
 
 ## Bug Fixes
+- [x] Fix: New positions start at $0 value until manual refresh — seed currentPrice/currentValue from trade price at execution time; sleeve positionsValue/totalValue recalculated immediately after every trade
+- [x] Fix: Portfolio Value card shows -80% total return — was dividing by group.totalCapital ($500K) instead of sum of sleeve allocatedCapitals
 - [x] Fix: Leaderboard Portfolio Value incorrect after Refresh (shows wrong total/return %)
 - [x] Fix: Prices not being picked up automatically (switched to query2.finance.yahoo.com with 429 retry backoff)
 - [x] Fix: Portfolio Value on leaderboard doesn't sum all sleeve totalValues correctly (was correct, staleness fixed by cron)
