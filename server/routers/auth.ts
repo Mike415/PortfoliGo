@@ -26,7 +26,7 @@ export const authRouter = router({
       z.object({
         username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_-]+$/, "Username can only contain letters, numbers, underscores, and hyphens"),
         passcode: z.string().min(4).max(64),
-        displayName: z.string().min(1).max(64).optional(),
+        displayName: z.string().max(64).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {

@@ -54,6 +54,8 @@
 - [x] Responsive design
 - [x] Loading states and error handling
 - [ ] Performance charts with Recharts (historical sleeve P&L over time)
+- [x] Fix: displayName validation rejects empty string on registration
+- [x] Add electric blue upward arrow favicon (growing portfolio chart)
 
 ## Testing
 - [x] 11 vitest tests passing (auth, portfolio, reallocation logic)

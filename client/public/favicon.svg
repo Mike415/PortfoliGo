@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="line_grad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#0066ff"/>
+      <stop offset="100%" style="stop-color:#00d4ff"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="0.8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="32" height="32" rx="6" fill="#080e1c"/>
+  <g filter="url(#glow)">
+    <!-- Area fill under chart line -->
+    <polygon points="4,25 8,22 11,24 15,18 18,20 22,13 26,8 26,27 4,27"
+             fill="url(#line_grad)" opacity="0.15"/>
+    <!-- Chart line -->
+    <polyline points="4,25 8,22 11,24 15,18 18,20 22,13 26,8"
+              fill="none" stroke="url(#line_grad)" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Arrowhead at top-right -->
+    <polygon points="26,8 21,10 23,13" fill="#00d4ff"/>
+  </g>
+</svg>
