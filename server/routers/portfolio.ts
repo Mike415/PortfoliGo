@@ -137,16 +137,19 @@ export const portfolioRouter = router({
       for (const snap of allSnaps) {
         const arr = bySleeveId.get(snap.sleeveId);
         if (arr) {
+          const d = new Date(snap.snapshotAt);
+          // Use ISO date string YYYY-MM-DD for reliable chronological sorting on the frontend
+          const isoDate = d.toISOString().slice(0, 10);
           arr.push({
-            date: new Date(snap.snapshotAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+            date: isoDate,
             totalValue: parseFloat(snap.totalValue),
           });
         }
       }
-      // Sort each series ascending
+      // Sort each series ascending by ISO date string
       for (const arr of Array.from(bySleeveId.values())) {
         arr.sort((a: { date: string; totalValue: number }, b: { date: string; totalValue: number }) =>
-          new Date(a.date).getTime() - new Date(b.date).getTime()
+          a.date.localeCompare(b.date)
         );
       }
 

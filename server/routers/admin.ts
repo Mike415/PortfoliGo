@@ -133,8 +133,14 @@ export const adminRouter = router({
           newAllocation = s.allocatedCapital + transferAmount;
         }
 
-        // Update sleeve allocated capital
-        await db.updateSleeve(s.sleeveId, { allocatedCapital: String(newAllocation) });
+        // Update sleeve allocated capital and recalculate returnPct against new allocation
+        const sleeve = sleeves.find((sl) => sl.id === s.sleeveId);
+        const currentTotalValue = sleeve ? parseFloat(sleeve.totalValue) : s.totalValue;
+        const newReturnPct = newAllocation !== 0 ? ((currentTotalValue - newAllocation) / newAllocation) * 100 : 0;
+        await db.updateSleeve(s.sleeveId, {
+          allocatedCapital: String(newAllocation),
+          returnPct: String(newReturnPct),
+        });
 
         // Record the change
         await db.createReallocationChange({
@@ -152,9 +158,12 @@ export const adminRouter = router({
       // Update group's last/next reallocation dates
       const now = new Date();
       const nextDate = new Date(now);
-      if (group.reallocationInterval === "6months") {
+      if (group.reallocationInterval === "3months") {
+        nextDate.setMonth(nextDate.getMonth() + 3);
+      } else if (group.reallocationInterval === "6months") {
         nextDate.setMonth(nextDate.getMonth() + 6);
       } else {
+        // 12months / yearly
         nextDate.setFullYear(nextDate.getFullYear() + 1);
       }
 

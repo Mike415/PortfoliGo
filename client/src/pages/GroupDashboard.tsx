@@ -89,11 +89,12 @@ export default function GroupDashboard() {
     }
 
     // Collect all unique dates across all series
+    // Each date string is "YYYY-MM-DD" (ISO format from backend) — sort chronologically
     const dateSet = new Set<string>();
     series.forEach((s: { sleeveId: number; displayName: string; isMe: boolean; data: { date: string; totalValue: number }[] }) => {
       s.data.forEach((d: { date: string; totalValue: number }) => dateSet.add(d.date));
     });
-    const sortedDates = Array.from(dateSet);
+    const sortedDates = Array.from(dateSet).sort((a, b) => a.localeCompare(b));
 
     // Build a map: date -> sleeveId -> totalValue
     const valueMap = new Map<string, Map<number, number>>();
@@ -177,7 +178,7 @@ export default function GroupDashboard() {
             <div>
               <h1 className="font-semibold text-sm leading-none">{leaderboard.group?.name || "Group"}</h1>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {leaderboard.entries.length} managers · {formatCurrency(leaderboard.startingCapital, true)} portfolio
+                {leaderboard.entries.length} manager{leaderboard.entries.length !== 1 ? "s" : ""} · {formatCurrency(leaderboard.group ? parseFloat(leaderboard.group.totalCapital) : leaderboard.startingCapital, true)} portfolio
               </p>
             </div>
           </div>

@@ -79,6 +79,13 @@
 - [ ] Document environment variables needed on Railway
 - [ ] Push Railway-ready build to GitHub
 
+## Audit Fixes (Round 4)
+- [x] Audit Fix: 3months reallocation interval not handled in executeReallocation next-date calc — now correctly adds 3 months
+- [x] Audit Fix: returnPct on sleeve not recalculated after reallocation — now recalculated immediately using new allocatedCapital
+- [x] Audit Fix: Performance chart dates not sorted chronologically — backend now emits ISO YYYY-MM-DD, frontend sorts lexicographically
+- [x] Audit Fix: Header subtitle now shows group.totalCapital (fixed at creation) not startingCapital (which changes after reallocation)
+- [x] Audit Fix: Cash Available % now shows cashBalance/totalValue (% of current portfolio) instead of % of allocatedCapital
+
 ## Bug Fixes
 - [x] Fix: New positions start at $0 value until manual refresh — seed currentPrice/currentValue from trade price at execution time; sleeve positionsValue/totalValue recalculated immediately after every trade
 - [x] Fix: Portfolio Value card shows -80% total return — was dividing by group.totalCapital ($500K) instead of sum of sleeve allocatedCapitals

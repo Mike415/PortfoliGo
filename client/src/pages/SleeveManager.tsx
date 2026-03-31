@@ -222,7 +222,7 @@ export default function SleeveManager() {
               <p className="text-xs text-muted-foreground mb-1">Cash Available</p>
               <p className="text-xl font-bold font-mono">{formatCurrency(sleeve.cashBalance)}</p>
               <p className="text-xs text-muted-foreground mt-1">
-                {((sleeve.cashBalance / sleeve.allocatedCapital) * 100).toFixed(1)}% of sleeve
+                {sleeve.totalValue > 0 ? ((sleeve.cashBalance / sleeve.totalValue) * 100).toFixed(1) : "100.0"}% of portfolio
               </p>
             </CardContent>
           </Card>
