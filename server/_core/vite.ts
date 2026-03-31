@@ -48,10 +48,18 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
+  // Resolve the directory of the current file robustly across bundlers.
+  // import.meta.dirname is undefined in some esbuild ESM bundles, so we
+  // fall back to deriving __dirname from import.meta.url.
+  const __dirname: string =
+    (import.meta as unknown as Record<string, unknown>).dirname as string ||
+    path.dirname(new URL(import.meta.url).pathname);
+
   const distPath =
     process.env.NODE_ENV === "development"
-      ? path.resolve(import.meta.dirname, "../..", "dist", "public")
-      : path.resolve(import.meta.dirname, "public");
+      ? path.resolve(__dirname, "../..", "dist", "public")
+      : path.resolve(__dirname, "public");
+
   if (!fs.existsSync(distPath)) {
     console.error(
       `Could not find the build directory: ${distPath}, make sure to build the client first`
