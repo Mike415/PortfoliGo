@@ -18,6 +18,7 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/login" component={Login} />
       <Route path="/join" component={JoinGroup} />
+      <Route path="/join/:code" component={JoinGroup} />
       <Route path="/create-group" component={CreateGroup} />
       <Route path="/group/:id" component={GroupDashboard} />
       <Route path="/group/:id/sleeve/:sleeveId" component={SleeveManager} />

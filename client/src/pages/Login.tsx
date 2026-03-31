@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,8 @@ import { TrendingUp, Lock, User, Eye, EyeOff } from "lucide-react";
 
 export default function Login() {
   const [, setLocation] = useLocation();
+  const search = useSearch();
+  const nextPath = new URLSearchParams(search).get("next") || "/";
   const [showPasscode, setShowPasscode] = useState(false);
   const utils = trpc.useUtils();
 
@@ -22,7 +24,7 @@ export default function Login() {
     onSuccess: () => {
       utils.auth.me.invalidate();
       toast.success("Welcome back!");
-      setLocation("/");
+      setLocation(nextPath);
     },
     onError: (err) => {
       toast.error(err.message);
@@ -33,7 +35,7 @@ export default function Login() {
     onSuccess: () => {
       utils.auth.me.invalidate();
       toast.success("Account created! Welcome to PortfoliGo.");
-      setLocation("/");
+      setLocation(nextPath);
     },
     onError: (err) => {
       toast.error(err.message);

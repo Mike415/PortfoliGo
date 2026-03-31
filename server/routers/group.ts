@@ -1,10 +1,32 @@
 import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import { z } from "zod";
 
 export const groupRouter = router({
+  // Public: preview group info by invite code (no auth required — for invite link landing page)
+  preview: publicProcedure
+    .input(z.object({ inviteCode: z.string() }))
+    .query(async ({ input }) => {
+      const group = await db.getGroupByInviteCode(input.inviteCode.toUpperCase());
+      if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "Invalid invite code" });
+      const members = await db.getGroupMembers(group.id);
+      return {
+        id: group.id,
+        name: group.name,
+        description: group.description,
+        sleeveSize: group.sleeveSize,
+        totalCapital: group.totalCapital,
+        maxParticipants: group.maxParticipants,
+        currentMembers: members.length,
+        reallocationInterval: group.reallocationInterval,
+        reallocationPercent: group.reallocationPercent,
+        status: group.status,
+        isFull: members.length >= group.maxParticipants,
+      };
+    }),
+
   // Create a new group (admin)
   create: protectedProcedure
     .input(

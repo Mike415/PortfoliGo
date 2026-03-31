@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Trophy, AlertTriangle, ChevronUp, ChevronDown, Clock, Settings, Trash2 } from "lucide-react";
+import { ArrowLeft, Trophy, AlertTriangle, ChevronUp, ChevronDown, Clock, Settings, Trash2, Copy, Check } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -103,9 +103,26 @@ export default function AdminPanel() {
           <CardContent>
             {group && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div>
-                  <p className="text-muted-foreground text-xs mb-1">Invite Code</p>
-                  <p className="font-mono font-bold text-primary">{group.inviteCode}</p>
+                <div className="col-span-2 md:col-span-4">
+                  <p className="text-muted-foreground text-xs mb-2">Invite Link — share this with participants</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 bg-muted/50 border border-border/50 rounded px-3 py-2 text-xs font-mono truncate">
+                      {window.location.origin}/join/{group.inviteCode}
+                    </code>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 gap-1.5"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${window.location.origin}/join/${group.inviteCode}`);
+                        toast.success("Link copied!");
+                      }}
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      Copy
+                    </Button>
+                  </div>
+                  <p className="text-muted-foreground text-xs mt-1.5">Code: <span className="font-mono font-bold text-primary">{group.inviteCode}</span></p>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs mb-1">Reallocation</p>
