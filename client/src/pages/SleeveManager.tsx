@@ -2,18 +2,26 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { formatCurrency, formatPct, formatQuantity, pnlClass } from "@/lib/format";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, Plus, RefreshCw, TrendingUp, TrendingDown, Wallet, Clock, ChevronUp, ChevronDown } from "lucide-react";
+import { ArrowLeft, Plus, RefreshCw, TrendingUp, Wallet, Clock, ChevronUp, ChevronDown, Search } from "lucide-react";
 import { useLocation, useParams } from "wouter";
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+
+type AssetType = "stock" | "etf" | "crypto";
+
+const ASSET_BADGE: Record<AssetType, string> = {
+  stock: "text-blue-400 bg-blue-400/10 border-blue-400/20",
+  etf: "text-purple-400 bg-purple-400/10 border-purple-400/20",
+  crypto: "text-orange-400 bg-orange-400/10 border-orange-400/20",
+};
 
 export default function SleeveManager() {
   const { id: groupId, sleeveId } = useParams<{ id: string; sleeveId: string }>();
@@ -189,11 +197,7 @@ export default function SleeveManager() {
 }
 
 function PositionRow({ position }: { position: any }) {
-  const assetBadgeClass = {
-    stock: "text-blue-400 bg-blue-400/10 border-blue-400/20",
-    etf: "text-purple-400 bg-purple-400/10 border-purple-400/20",
-    crypto: "text-orange-400 bg-orange-400/10 border-orange-400/20",
-  }[position.assetType as string] || "";
+  const assetBadgeClass = ASSET_BADGE[position.assetType as AssetType] || "";
 
   return (
     <div className="flex items-center gap-4 p-4 rounded-lg border border-border/50 bg-card/50 hover:bg-card/80 transition-colors">
@@ -244,22 +248,132 @@ function TradeRow({ trade }: { trade: any }) {
   );
 }
 
+// ─── Ticker Search Autocomplete ───────────────────────────────────────────────
+
+type SearchResult = { ticker: string; name: string; assetType: AssetType };
+
+function TickerSearch({
+  onSelect,
+}: {
+  onSelect: (result: SearchResult & { price?: number }) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const utils = trpc.useUtils();
+
+  const { data: results, isFetching } = trpc.pricing.search.useQuery(
+    { query },
+    { enabled: query.length >= 1, staleTime: 30_000 }
+  );
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(e.target as Node) &&
+        inputRef.current && !inputRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleSelect = useCallback(async (item: SearchResult) => {
+    setOpen(false);
+    setQuery(item.ticker);
+    setResolving(true);
+    try {
+      const quote = await utils.pricing.getQuote.fetch({ ticker: item.ticker });
+      onSelect({ ...item, price: quote.price, assetType: quote.assetType as AssetType });
+      toast.success(`${item.ticker} — ${formatCurrency(quote.price)}`);
+    } catch {
+      onSelect(item);
+      toast.info(`${item.ticker} selected — enter price manually`);
+    } finally {
+      setResolving(false);
+    }
+  }, [utils, onSelect]);
+
+  return (
+    <div className="relative">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+        <Input
+          ref={inputRef}
+          placeholder="Search ticker or company name..."
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value.toUpperCase());
+            setOpen(true);
+          }}
+          onFocus={() => query.length >= 1 && setOpen(true)}
+          className="font-mono pl-9 pr-8"
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+        />
+        {(isFetching || resolving) && (
+          <RefreshCw className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground animate-spin" />
+        )}
+      </div>
+
+      {open && results && results.length > 0 && (
+        <div
+          ref={dropdownRef}
+          className="absolute z-50 w-full mt-1 rounded-lg border border-border/60 bg-card shadow-xl overflow-hidden"
+        >
+          {results.map((item) => (
+            <button
+              key={item.ticker}
+              type="button"
+              className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted/50 transition-colors text-left"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                handleSelect(item as SearchResult);
+              }}
+            >
+              <span className="font-mono font-bold text-sm w-24 shrink-0">{item.ticker}</span>
+              <span className="text-sm text-muted-foreground truncate flex-1">{item.name}</span>
+              <Badge
+                variant="outline"
+                className={`text-xs shrink-0 ${ASSET_BADGE[item.assetType as AssetType] || ""}`}
+              >
+                {item.assetType}
+              </Badge>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {open && query.length >= 1 && (!results || results.length === 0) && !isFetching && (
+        <div
+          ref={dropdownRef}
+          className="absolute z-50 w-full mt-1 rounded-lg border border-border/60 bg-card shadow-xl p-3 text-sm text-muted-foreground"
+        >
+          No results for "{query}" — try an exact ticker symbol (e.g. AAPL, BTC-USD)
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Trade Form ───────────────────────────────────────────────────────────────
+
 function TradeForm({ groupId, cashBalance, onSuccess }: { groupId: number; cashBalance: number; onSuccess: () => void }) {
   const [form, setForm] = useState({
     ticker: "",
+    name: "",
     side: "buy" as "buy" | "sell",
     quantity: "",
     price: "",
-    assetType: "stock" as "stock" | "etf" | "crypto",
-    notes: "",
+    assetType: "stock" as AssetType,
   });
-  const [quoteLoading, setQuoteLoading] = useState(false);
   const utils = trpc.useUtils();
-
-  const quoteMutation = trpc.pricing.getQuote.useQuery(
-    { ticker: form.ticker },
-    { enabled: false }
-  );
 
   const tradeMutation = trpc.portfolio.addTrade.useMutation({
     onSuccess: () => {
@@ -271,26 +385,18 @@ function TradeForm({ groupId, cashBalance, onSuccess }: { groupId: number; cashB
     onError: (err) => toast.error(err.message),
   });
 
-  const fetchQuote = async () => {
-    if (!form.ticker) return;
-    setQuoteLoading(true);
-    try {
-      const result = await utils.pricing.getQuote.fetch({ ticker: form.ticker.toUpperCase() });
-      if (result) {
-        setForm((f) => ({
-          ...f,
-          price: result.price.toFixed(2),
-          assetType: result.assetType,
-          ticker: result.ticker,
-        }));
-        toast.success(`${result.ticker}: ${formatCurrency(result.price)}`);
-      }
-    } catch (err: any) {
-      toast.error(err.message || "Could not find ticker");
-    } finally {
-      setQuoteLoading(false);
-    }
-  };
+  const handleTickerSelect = useCallback(
+    (result: SearchResult & { price?: number }) => {
+      setForm((f) => ({
+        ...f,
+        ticker: result.ticker,
+        name: result.name,
+        assetType: result.assetType,
+        price: result.price !== undefined ? result.price.toFixed(2) : f.price,
+      }));
+    },
+    []
+  );
 
   const totalValue = parseFloat(form.quantity || "0") * parseFloat(form.price || "0");
 
@@ -305,55 +411,37 @@ function TradeForm({ groupId, cashBalance, onSuccess }: { groupId: number; cashB
           quantity: parseFloat(form.quantity),
           price: parseFloat(form.price),
           assetType: form.assetType,
-          notes: form.notes || undefined,
         });
       }}
       className="space-y-4"
     >
-      {/* Ticker */}
+      {/* Ticker Search */}
       <div className="space-y-2">
-        <Label>Ticker Symbol</Label>
-        <div className="flex gap-2">
-          <Input
-            placeholder="AAPL, BTC-USD, SPY..."
-            value={form.ticker}
-            onChange={(e) => setForm((f) => ({ ...f, ticker: e.target.value.toUpperCase() }))}
-            className="font-mono"
-          />
-          <Button type="button" variant="outline" onClick={fetchQuote} disabled={!form.ticker || quoteLoading} className="shrink-0">
-            {quoteLoading ? "..." : "Quote"}
-          </Button>
-        </div>
-        <p className="text-xs text-muted-foreground">Stocks: AAPL · ETFs: SPY · Crypto: BTC-USD, ETH-USD</p>
+        <Label>Search Ticker</Label>
+        <TickerSearch onSelect={handleTickerSelect} />
+        {form.ticker && (
+          <div className="flex items-center gap-2 px-1 pt-0.5">
+            <span className="font-mono font-bold text-sm">{form.ticker}</span>
+            {form.name && <span className="text-xs text-muted-foreground truncate flex-1">{form.name}</span>}
+            <Badge variant="outline" className={`text-xs shrink-0 ${ASSET_BADGE[form.assetType]}`}>
+              {form.assetType}
+            </Badge>
+          </div>
+        )}
       </div>
 
-      {/* Side + Asset Type */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label>Side</Label>
-          <Select value={form.side} onValueChange={(v) => setForm((f) => ({ ...f, side: v as "buy" | "sell" }))}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="buy">Buy</SelectItem>
-              <SelectItem value="sell">Sell</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Asset Type</Label>
-          <Select value={form.assetType} onValueChange={(v) => setForm((f) => ({ ...f, assetType: v as any }))}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="stock">Stock</SelectItem>
-              <SelectItem value="etf">ETF</SelectItem>
-              <SelectItem value="crypto">Crypto</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+      {/* Side */}
+      <div className="space-y-2">
+        <Label>Side</Label>
+        <Select value={form.side} onValueChange={(v) => setForm((f) => ({ ...f, side: v as "buy" | "sell" }))}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="buy">Buy</SelectItem>
+            <SelectItem value="sell">Sell</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Quantity + Price */}

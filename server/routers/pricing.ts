@@ -224,16 +224,166 @@ export const pricingRouter = router({
       }
     }),
 
-  // Search for a ticker symbol
-  search: publicProcedure
-    .input(z.object({ query: z.string().min(1).max(20) }))
+  // Search for a ticker symbol — returns curated matches + live resolution
+  search: protectedProcedure
+    .input(z.object({ query: z.string().min(1).max(30) }))
     .query(async ({ input }) => {
-      // Try to get a quote directly - if it works, the ticker is valid
-      const ticker = input.query.toUpperCase();
-      const live = await fetchLivePrice(ticker);
-      if (live) {
-        return [{ ticker: live.ticker, name: live.name || ticker, assetType: live.assetType }];
+      const q = input.query.trim().toUpperCase();
+      if (!q) return [];
+
+      // Curated list of popular tickers with names and types
+      const POPULAR: { ticker: string; name: string; assetType: AssetType }[] = [
+        // Large-cap stocks
+        { ticker: "AAPL", name: "Apple Inc.", assetType: "stock" },
+        { ticker: "MSFT", name: "Microsoft Corporation", assetType: "stock" },
+        { ticker: "GOOGL", name: "Alphabet Inc. (Google)", assetType: "stock" },
+        { ticker: "AMZN", name: "Amazon.com Inc.", assetType: "stock" },
+        { ticker: "NVDA", name: "NVIDIA Corporation", assetType: "stock" },
+        { ticker: "META", name: "Meta Platforms Inc.", assetType: "stock" },
+        { ticker: "TSLA", name: "Tesla Inc.", assetType: "stock" },
+        { ticker: "BRK-B", name: "Berkshire Hathaway Inc.", assetType: "stock" },
+        { ticker: "JPM", name: "JPMorgan Chase & Co.", assetType: "stock" },
+        { ticker: "V", name: "Visa Inc.", assetType: "stock" },
+        { ticker: "UNH", name: "UnitedHealth Group Inc.", assetType: "stock" },
+        { ticker: "JNJ", name: "Johnson & Johnson", assetType: "stock" },
+        { ticker: "WMT", name: "Walmart Inc.", assetType: "stock" },
+        { ticker: "XOM", name: "Exxon Mobil Corporation", assetType: "stock" },
+        { ticker: "MA", name: "Mastercard Inc.", assetType: "stock" },
+        { ticker: "PG", name: "Procter & Gamble Co.", assetType: "stock" },
+        { ticker: "HD", name: "The Home Depot Inc.", assetType: "stock" },
+        { ticker: "CVX", name: "Chevron Corporation", assetType: "stock" },
+        { ticker: "ABBV", name: "AbbVie Inc.", assetType: "stock" },
+        { ticker: "BAC", name: "Bank of America Corp.", assetType: "stock" },
+        { ticker: "KO", name: "The Coca-Cola Company", assetType: "stock" },
+        { ticker: "AVGO", name: "Broadcom Inc.", assetType: "stock" },
+        { ticker: "PFE", name: "Pfizer Inc.", assetType: "stock" },
+        { ticker: "COST", name: "Costco Wholesale Corp.", assetType: "stock" },
+        { ticker: "MRK", name: "Merck & Co. Inc.", assetType: "stock" },
+        { ticker: "DIS", name: "The Walt Disney Company", assetType: "stock" },
+        { ticker: "NFLX", name: "Netflix Inc.", assetType: "stock" },
+        { ticker: "AMD", name: "Advanced Micro Devices Inc.", assetType: "stock" },
+        { ticker: "INTC", name: "Intel Corporation", assetType: "stock" },
+        { ticker: "PYPL", name: "PayPal Holdings Inc.", assetType: "stock" },
+        { ticker: "ADBE", name: "Adobe Inc.", assetType: "stock" },
+        { ticker: "CRM", name: "Salesforce Inc.", assetType: "stock" },
+        { ticker: "ORCL", name: "Oracle Corporation", assetType: "stock" },
+        { ticker: "IBM", name: "International Business Machines", assetType: "stock" },
+        { ticker: "QCOM", name: "Qualcomm Inc.", assetType: "stock" },
+        { ticker: "GS", name: "Goldman Sachs Group Inc.", assetType: "stock" },
+        { ticker: "MS", name: "Morgan Stanley", assetType: "stock" },
+        { ticker: "BA", name: "Boeing Company", assetType: "stock" },
+        { ticker: "CAT", name: "Caterpillar Inc.", assetType: "stock" },
+        { ticker: "MMM", name: "3M Company", assetType: "stock" },
+        { ticker: "GE", name: "GE Aerospace", assetType: "stock" },
+        { ticker: "F", name: "Ford Motor Company", assetType: "stock" },
+        { ticker: "GM", name: "General Motors Company", assetType: "stock" },
+        { ticker: "T", name: "AT&T Inc.", assetType: "stock" },
+        { ticker: "VZ", name: "Verizon Communications Inc.", assetType: "stock" },
+        { ticker: "UBER", name: "Uber Technologies Inc.", assetType: "stock" },
+        { ticker: "LYFT", name: "Lyft Inc.", assetType: "stock" },
+        { ticker: "SNAP", name: "Snap Inc.", assetType: "stock" },
+        { ticker: "SPOT", name: "Spotify Technology S.A.", assetType: "stock" },
+        { ticker: "COIN", name: "Coinbase Global Inc.", assetType: "stock" },
+        { ticker: "HOOD", name: "Robinhood Markets Inc.", assetType: "stock" },
+        { ticker: "SQ", name: "Block Inc. (Square)", assetType: "stock" },
+        { ticker: "SHOP", name: "Shopify Inc.", assetType: "stock" },
+        { ticker: "PLTR", name: "Palantir Technologies Inc.", assetType: "stock" },
+        { ticker: "RIVN", name: "Rivian Automotive Inc.", assetType: "stock" },
+        { ticker: "LCID", name: "Lucid Group Inc.", assetType: "stock" },
+        // Popular ETFs
+        { ticker: "SPY", name: "SPDR S&P 500 ETF Trust", assetType: "etf" },
+        { ticker: "QQQ", name: "Invesco QQQ Trust (Nasdaq 100)", assetType: "etf" },
+        { ticker: "IWM", name: "iShares Russell 2000 ETF", assetType: "etf" },
+        { ticker: "VTI", name: "Vanguard Total Stock Market ETF", assetType: "etf" },
+        { ticker: "VOO", name: "Vanguard S&P 500 ETF", assetType: "etf" },
+        { ticker: "VEA", name: "Vanguard FTSE Developed Markets ETF", assetType: "etf" },
+        { ticker: "VWO", name: "Vanguard FTSE Emerging Markets ETF", assetType: "etf" },
+        { ticker: "GLD", name: "SPDR Gold Shares ETF", assetType: "etf" },
+        { ticker: "SLV", name: "iShares Silver Trust ETF", assetType: "etf" },
+        { ticker: "TLT", name: "iShares 20+ Year Treasury Bond ETF", assetType: "etf" },
+        { ticker: "HYG", name: "iShares iBoxx High Yield Corporate Bond ETF", assetType: "etf" },
+        { ticker: "XLF", name: "Financial Select Sector SPDR ETF", assetType: "etf" },
+        { ticker: "XLK", name: "Technology Select Sector SPDR ETF", assetType: "etf" },
+        { ticker: "XLE", name: "Energy Select Sector SPDR ETF", assetType: "etf" },
+        { ticker: "XLV", name: "Health Care Select Sector SPDR ETF", assetType: "etf" },
+        { ticker: "XLI", name: "Industrial Select Sector SPDR ETF", assetType: "etf" },
+        { ticker: "ARKK", name: "ARK Innovation ETF", assetType: "etf" },
+        { ticker: "ARKG", name: "ARK Genomic Revolution ETF", assetType: "etf" },
+        { ticker: "SQQQ", name: "ProShares UltraPro Short QQQ", assetType: "etf" },
+        { ticker: "TQQQ", name: "ProShares UltraPro QQQ", assetType: "etf" },
+        { ticker: "SPXS", name: "Direxion Daily S&P 500 Bear 3X ETF", assetType: "etf" },
+        { ticker: "SPXL", name: "Direxion Daily S&P 500 Bull 3X ETF", assetType: "etf" },
+        { ticker: "DIA", name: "SPDR Dow Jones Industrial Average ETF", assetType: "etf" },
+        { ticker: "EEM", name: "iShares MSCI Emerging Markets ETF", assetType: "etf" },
+        // Crypto
+        { ticker: "BTC-USD", name: "Bitcoin", assetType: "crypto" },
+        { ticker: "ETH-USD", name: "Ethereum", assetType: "crypto" },
+        { ticker: "SOL-USD", name: "Solana", assetType: "crypto" },
+        { ticker: "BNB-USD", name: "BNB (Binance Coin)", assetType: "crypto" },
+        { ticker: "XRP-USD", name: "XRP (Ripple)", assetType: "crypto" },
+        { ticker: "ADA-USD", name: "Cardano", assetType: "crypto" },
+        { ticker: "DOGE-USD", name: "Dogecoin", assetType: "crypto" },
+        { ticker: "AVAX-USD", name: "Avalanche", assetType: "crypto" },
+        { ticker: "LINK-USD", name: "Chainlink", assetType: "crypto" },
+        { ticker: "DOT-USD", name: "Polkadot", assetType: "crypto" },
+        { ticker: "MATIC-USD", name: "Polygon (MATIC)", assetType: "crypto" },
+        { ticker: "LTC-USD", name: "Litecoin", assetType: "crypto" },
+        { ticker: "UNI-USD", name: "Uniswap", assetType: "crypto" },
+        { ticker: "ATOM-USD", name: "Cosmos", assetType: "crypto" },
+        { ticker: "NEAR-USD", name: "NEAR Protocol", assetType: "crypto" },
+      ];
+
+      // 1. Filter curated list by ticker prefix or name substring
+      const curatedMatches = POPULAR.filter(
+        (item) =>
+          item.ticker.startsWith(q) ||
+          item.name.toUpperCase().includes(q) ||
+          item.ticker.includes(q)
+      ).slice(0, 8);
+
+      // 2. If the query looks like an exact ticker (short, no spaces), also try live resolution
+      const looksLikeTicker = /^[A-Z0-9\-\.]{1,12}$/.test(q) && !q.includes(" ");
+      const alreadyInCurated = curatedMatches.some((m) => m.ticker === q);
+
+      if (looksLikeTicker && !alreadyInCurated) {
+        // Check cache first
+        const cached = await db.getPriceCacheEntry(q);
+        if (cached) {
+          curatedMatches.unshift({
+            ticker: cached.ticker,
+            name: cached.name || cached.ticker,
+            assetType: cached.assetType as AssetType,
+          });
+        } else {
+          // Try live fetch (only if query is 2+ chars to avoid noise)
+          if (q.length >= 2) {
+            const live = await fetchLivePrice(q);
+            if (live) {
+              // Cache it
+              await db.upsertPriceCache(
+                q,
+                live.assetType,
+                String(live.price),
+                live.change !== null ? String(live.change) : null,
+                live.changePct !== null ? String(live.changePct) : null,
+                live.name
+              );
+              curatedMatches.unshift({
+                ticker: live.ticker,
+                name: live.name || live.ticker,
+                assetType: live.assetType,
+              });
+            }
+          }
+        }
       }
-      return [];
+
+      // Deduplicate by ticker
+      const seen = new Set<string>();
+      return curatedMatches.filter((m) => {
+        if (seen.has(m.ticker)) return false;
+        seen.add(m.ticker);
+        return true;
+      }).slice(0, 8);
     }),
 });

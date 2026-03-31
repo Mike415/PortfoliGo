@@ -13,20 +13,24 @@ function detectAssetType(ticker: string, instrumentType?: string): AssetType {
   return "stock";
 }
 
-async function fetchPrice(ticker: string): Promise<{ price: number; assetType: AssetType; name: string | null }> {
-  const cached = await db.getPriceCacheEntry(ticker);
+async function fetchPrice(ticker: string, forceRefresh = false): Promise<{ price: number; assetType: AssetType; name: string | null }> {
   const CACHE_TTL = 5 * 60 * 1000;
-  if (cached && Date.now() - cached.updatedAt.getTime() < CACHE_TTL) {
-    return { price: parseFloat(cached.price), assetType: cached.assetType, name: cached.name };
+
+  if (!forceRefresh) {
+    const cached = await db.getPriceCacheEntry(ticker);
+    if (cached && Date.now() - cached.updatedAt.getTime() < CACHE_TTL) {
+      return { price: parseFloat(cached.price), assetType: cached.assetType as AssetType, name: cached.name };
+    }
   }
 
+  // Note: do NOT pass boolean fields — the API rejects them
   const result = await callDataApi("YahooFinance/get_stock_chart", {
-    query: { symbol: ticker, interval: "1d", range: "5d", includeAdjustedClose: false },
+    query: { symbol: ticker, interval: "1d", range: "5d" },
   });
   const meta = (result as any)?.chart?.result?.[0]?.meta;
   if (!meta) throw new TRPCError({ code: "NOT_FOUND", message: `Could not find price for ${ticker}` });
 
-  const price = meta.regularMarketPrice ?? 0;
+  const price = meta.regularMarketPrice ?? meta.chartPreviousClose ?? 0;
   const assetType = detectAssetType(ticker, meta.instrumentType);
   const name = meta.longName || meta.shortName || null;
   const previousClose = meta.chartPreviousClose ?? meta.previousClose ?? price;
@@ -84,36 +88,40 @@ export const portfolioRouter = router({
       const positions = await db.getPositionsForSleeve(sleeve.id);
       if (positions.length === 0) return { success: true, updated: 0 };
 
-      let totalPositionsValue = 0;
-      let totalUnrealizedPnl = 0;
+      // Fetch prices sequentially to avoid race conditions on the accumulator
+      // and to stay within API rate limits
+      const priceResults: { posId: number; currentValue: number; unrealizedPnl: number }[] = [];
 
-      await Promise.all(
-        positions.map(async (pos) => {
-          try {
-            const { price } = await fetchPrice(pos.ticker);
-            const qty = parseFloat(pos.quantity);
-            const avgCost = parseFloat(pos.avgCostBasis);
-            const currentValue = qty * price;
-            const unrealizedPnl = currentValue - qty * avgCost;
-            const unrealizedPnlPct = avgCost !== 0 ? ((price - avgCost) / avgCost) * 100 : 0;
+      for (const pos of positions) {
+        try {
+          const { price } = await fetchPrice(pos.ticker, true); // force bypass cache on manual refresh
+          const qty = parseFloat(pos.quantity);
+          const avgCost = parseFloat(pos.avgCostBasis);
+          const currentValue = qty * price;
+          const unrealizedPnl = currentValue - qty * avgCost;
+          const unrealizedPnlPct = avgCost !== 0 ? ((price - avgCost) / avgCost) * 100 : 0;
 
-            await db.upsertPosition({
-              ...pos,
-              currentPrice: String(price),
-              currentValue: String(currentValue),
-              unrealizedPnl: String(unrealizedPnl),
-              unrealizedPnlPct: String(unrealizedPnlPct),
-              lastPricedAt: new Date(),
-            });
+          await db.upsertPosition({
+            ...pos,
+            currentPrice: String(price),
+            currentValue: String(currentValue),
+            unrealizedPnl: String(unrealizedPnl),
+            unrealizedPnlPct: String(unrealizedPnlPct),
+            lastPricedAt: new Date(),
+          });
 
-            totalPositionsValue += currentValue;
-            totalUnrealizedPnl += unrealizedPnl;
-          } catch (err) {
-            console.error(`[Portfolio] Failed to refresh price for ${pos.ticker}:`, err);
-          }
-        })
-      );
+          priceResults.push({ posId: pos.id, currentValue, unrealizedPnl });
+        } catch (err) {
+          console.error(`[Portfolio] Failed to refresh price for ${pos.ticker}:`, err);
+          // Use last known value so the total is still meaningful
+          const lastValue = pos.currentValue ? parseFloat(pos.currentValue) : 0;
+          const lastPnl = pos.unrealizedPnl ? parseFloat(pos.unrealizedPnl) : 0;
+          priceResults.push({ posId: pos.id, currentValue: lastValue, unrealizedPnl: lastPnl });
+        }
+      }
 
+      const totalPositionsValue = priceResults.reduce((sum, r) => sum + r.currentValue, 0);
+      const totalUnrealizedPnl = priceResults.reduce((sum, r) => sum + r.unrealizedPnl, 0);
       const cashBalance = parseFloat(sleeve.cashBalance);
       const allocatedCapital = parseFloat(sleeve.allocatedCapital);
       const totalValue = cashBalance + totalPositionsValue;

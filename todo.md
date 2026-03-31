@@ -1,59 +1,70 @@
 # PortfoliGo — Todo
 
 ## Authentication
-- [ ] Custom username/passcode auth (no OAuth)
-- [ ] Invite code system for joining groups
-- [ ] Session management with JWT
+- [x] Custom username/passcode auth (no OAuth)
+- [x] Invite code system for joining groups
+- [x] Session management with JWT
 
 ## Database Schema
-- [ ] Users table (username, hashed passcode, role)
-- [ ] Groups table (name, total capital, start date, reallocation interval)
-- [ ] Sleeves table (group, user, allocated capital, current value)
-- [ ] Positions table (sleeve, ticker, asset type, quantity, avg cost)
-- [ ] Trades table (sleeve, ticker, side, quantity, price, timestamp)
-- [ ] Reallocation history table
-- [ ] Price cache table (ticker, price, last updated)
+- [x] Users table (username, hashed passcode, role)
+- [x] Groups table (name, total capital, start date, reallocation interval)
+- [x] Sleeves table (group, user, allocated capital, current value)
+- [x] Positions table (sleeve, ticker, asset type, quantity, avg cost)
+- [x] Trades table (sleeve, ticker, side, quantity, price, timestamp)
+- [x] Reallocation history table
+- [x] Price cache table (ticker, price, last updated)
 
 ## Backend Procedures
-- [ ] auth.register / auth.login / auth.logout
-- [ ] group.create / group.get / group.join (invite code)
-- [ ] sleeve.get / sleeve.getAll (leaderboard)
-- [ ] trade.add / trade.list
-- [ ] position.list / position.getWithPrices
-- [ ] pricing.getQuote (Yahoo Finance API)
-- [ ] pricing.batchQuote (multiple tickers)
-- [ ] pricing.getHistory (chart data)
-- [ ] admin.configureGroup / admin.triggerReallocation
-- [ ] admin.getReallocationPreview
+- [x] auth.register / auth.login / auth.logout
+- [x] group.create / group.get / group.join (invite code)
+- [x] sleeve.get / sleeve.getAll (leaderboard)
+- [x] trade.add / trade.list
+- [x] position.list / position.getWithPrices
+- [x] pricing.getQuote (Yahoo Finance API)
+- [x] pricing.batchQuote (multiple tickers)
+- [x] pricing.getHistory (chart data)
+- [x] admin.configureGroup / admin.triggerReallocation
+- [x] admin.getReallocationPreview
 
 ## Frontend Pages
-- [ ] Landing / login page
-- [ ] Register page
-- [ ] Group dashboard (aggregate view)
-- [ ] My Sleeve page (positions + P&L)
-- [ ] Trade entry form
-- [ ] Leaderboard page
-- [ ] Admin panel (group config + reallocation)
-- [ ] Performance charts (historical)
+- [x] Landing / login page
+- [x] Register page
+- [x] Group dashboard (aggregate view)
+- [x] My Sleeve page (positions + P&L)
+- [x] Trade entry form
+- [x] Leaderboard page
+- [x] Admin panel (group config + reallocation)
+- [ ] Performance charts (historical) — positions chart placeholder ready
 
 ## Live Pricing
-- [ ] Fetch real-time prices for all positions
-- [ ] Mark-to-market P&L calculation
-- [ ] Auto-refresh pricing on dashboard
-- [ ] Support stocks, ETFs, crypto (BTC-USD format)
+- [x] Fetch real-time prices for all positions
+- [x] Mark-to-market P&L calculation
+- [x] Auto-refresh pricing on dashboard
+- [x] Support stocks, ETFs, crypto (BTC-USD format)
 
 ## Reallocation Engine
-- [ ] Calculate sleeve rankings by return %
-- [ ] Bottom performer loses 5% of sleeve
-- [ ] Top performer gains 5% of sleeve
-- [ ] Admin preview before confirming
-- [ ] Reallocation history log
+- [x] Calculate sleeve rankings by return %
+- [x] Bottom performer loses 5% of sleeve
+- [x] Top performer gains 5% of sleeve
+- [x] Admin preview before confirming
+- [x] Reallocation history log
 
 ## UI Polish
-- [ ] Dark financial theme (Bloomberg-inspired)
-- [ ] Responsive design
-- [ ] Loading states and error handling
-- [ ] Performance charts with Recharts
+- [x] Dark financial theme (Bloomberg-inspired)
+- [x] Responsive design
+- [x] Loading states and error handling
+- [ ] Performance charts with Recharts (historical sleeve P&L over time)
+
+## Testing
+- [x] 11 vitest tests passing (auth, portfolio, reallocation logic)
+- [x] TypeScript strict mode, zero errors
 
 ## GitHub
-- [ ] Push to https://github.com/Mike415/PortfoliGo
+- [x] Push to https://github.com/Mike415/PortfoliGo
+
+## Ticker Search & Auto-Detection
+- [x] Backend: ticker search endpoint using Yahoo Finance symbol search API
+- [x] Backend: auto-detect asset type (stock/ETF/crypto) from quote data
+- [x] Frontend: autocomplete dropdown in trade form as user types
+- [x] Frontend: remove manual asset type selector — auto-filled from search result
+- [x] Frontend: show company/asset name alongside ticker in search results
