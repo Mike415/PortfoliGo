@@ -33,7 +33,7 @@ export const groups = mysqlTable("groups", {
   totalCapital: decimal("totalCapital", { precision: 18, scale: 2 }).notNull().default("1000000.00"),
   sleeveSize: decimal("sleeveSize", { precision: 18, scale: 2 }).notNull().default("200000.00"),
   maxParticipants: int("maxParticipants").notNull().default(5),
-  reallocationInterval: mysqlEnum("reallocationInterval", ["6months", "12months"]).notNull().default("6months"),
+  reallocationInterval: mysqlEnum("reallocationInterval", ["3months", "6months", "12months"]).notNull().default("6months"),
   reallocationPercent: decimal("reallocationPercent", { precision: 5, scale: 2 }).notNull().default("5.00"),
   startDate: timestamp("startDate").defaultNow().notNull(),
   nextReallocationDate: timestamp("nextReallocationDate"),

@@ -13,7 +13,7 @@ export const groupRouter = router({
         description: z.string().max(500).optional(),
         totalCapital: z.number().positive().default(1000000),
         maxParticipants: z.number().int().min(2).max(20).default(5),
-        reallocationInterval: z.enum(["6months", "12months"]).default("6months"),
+        reallocationInterval: z.enum(["3months", "6months", "12months"]).default("6months"),
         reallocationPercent: z.number().min(1).max(50).default(5),
       })
     )
@@ -24,7 +24,9 @@ export const groupRouter = router({
 
       // Calculate next reallocation date
       const nextReallocationDate = new Date(startDate);
-      if (input.reallocationInterval === "6months") {
+      if (input.reallocationInterval === "3months") {
+        nextReallocationDate.setMonth(nextReallocationDate.getMonth() + 3);
+      } else if (input.reallocationInterval === "6months") {
         nextReallocationDate.setMonth(nextReallocationDate.getMonth() + 6);
       } else {
         nextReallocationDate.setFullYear(nextReallocationDate.getFullYear() + 1);
@@ -54,6 +56,7 @@ export const groupRouter = router({
         name: `${ctx.user.displayName || ctx.user.username}'s Sleeve`,
         allocatedCapital: String(sleeveSize),
         cashBalance: String(sleeveSize),
+        totalValue: String(sleeveSize),
       });
 
       // Promote user to admin if they're creating a group
@@ -102,6 +105,7 @@ export const groupRouter = router({
         name: `${ctx.user.displayName || ctx.user.username}'s Sleeve`,
         allocatedCapital: String(group.sleeveSize),
         cashBalance: String(group.sleeveSize),
+        totalValue: String(group.sleeveSize),
       });
 
       return { success: true, group };
@@ -163,7 +167,7 @@ export const groupRouter = router({
         groupId: z.number(),
         name: z.string().min(1).max(128).optional(),
         description: z.string().max(500).optional(),
-        reallocationInterval: z.enum(["6months", "12months"]).optional(),
+        reallocationInterval: z.enum(["3months", "6months", "12months"]).optional(),
         reallocationPercent: z.number().min(1).max(50).optional(),
         status: z.enum(["active", "paused", "completed"]).optional(),
       })

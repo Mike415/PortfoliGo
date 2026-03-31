@@ -1,0 +1,1 @@
+ALTER TABLE `groups` MODIFY COLUMN `reallocationInterval` enum('3months','6months','12months') NOT NULL DEFAULT '6months';

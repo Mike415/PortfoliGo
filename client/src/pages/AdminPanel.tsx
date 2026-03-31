@@ -109,7 +109,7 @@ export default function AdminPanel() {
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs mb-1">Reallocation</p>
-                  <p className="font-medium">{group.reallocationInterval === "6months" ? "Every 6 months" : "Annually"}</p>
+                  <p className="font-medium">{group.reallocationInterval === "3months" ? "Every 3 months" : group.reallocationInterval === "6months" ? "Every 6 months" : "Annually"}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs mb-1">Transfer %</p>

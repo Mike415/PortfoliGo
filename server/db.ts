@@ -378,6 +378,26 @@ export async function getReallocationHistory(groupId: number) {
 
 // ─── Portfolio Snapshots ─────────────────────────────────────────────────────
 
+/** Return all groups with status = 'active' (used by the cron job) */
+export async function getActiveGroups() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(groups).where(eq(groups.status, "active"));
+}
+
+/** Fetch snapshots for multiple sleeves in one query (for leaderboard chart) */
+export async function getSnapshotsForSleeves(sleeveIds: number[], limit = 90) {
+  const db = await getDb();
+  if (!db) return [];
+  if (sleeveIds.length === 0) return [];
+  return db
+    .select()
+    .from(portfolioSnapshots)
+    .where(inArray(portfolioSnapshots.sleeveId, sleeveIds))
+    .orderBy(desc(portfolioSnapshots.snapshotAt))
+    .limit(limit * sleeveIds.length);
+}
+
 export async function insertSnapshot(data: InsertPortfolioSnapshot) {
   const db = await getDb();
   if (!db) return;

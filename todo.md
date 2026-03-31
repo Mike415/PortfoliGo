@@ -82,6 +82,16 @@
 ## Bug Fixes
 - [x] Fix: Leaderboard Portfolio Value incorrect after Refresh (shows wrong total/return %)
 - [x] Fix: Prices not being picked up automatically (switched to query2.finance.yahoo.com with 429 retry backoff)
+- [x] Fix: Portfolio Value on leaderboard doesn't sum all sleeve totalValues correctly (was correct, staleness fixed by cron)
+- [x] Fix: Clicking another player's sleeve on leaderboard loads own sleeve instead of theirs (getSleeveById by URL param)
+- [x] Fix: S2Cap sleeve shows $200K totalValue but should show $100K (totalValue now initialized to allocatedCapital on join)
+- [x] Fix: Proper URL routing — each view has a bookmarkable URL, browser back/forward works throughout
+- [x] Fix: Tickers HCOW, HIMX, LNG, EQT (and similar MLP/small-cap) not resolving in search or quote (confirmed working via query2)
+- [x] Remove manual price entry from trade form — price is now read-only, auto-filled from live Yahoo Finance quote
+- [x] Clickable position rows that open a pre-filled trade dialog (buy more / sell / short / cover)
+- [x] Server-side cron: snapshot all active groups at 4:05 PM ET Mon–Fri (node-cron)
+- [x] Add 3-month reallocation interval option (schema + UI)
+- [x] Leaderboard multi-line equity curve: all participants’ portfolio value over time on one chart
 
 ## New Features (Round 3)
 - [x] Delete competition (admin only, cascades all sleeves/positions/trades)

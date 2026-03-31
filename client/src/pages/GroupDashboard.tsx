@@ -2,16 +2,45 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { formatCurrency, formatPct, pnlClass } from "@/lib/format";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Legend,
+} from "recharts";
 import {
   TrendingUp, ArrowLeft, RefreshCw, Trophy, Wallet,
   BarChart2, Settings, ChevronUp, ChevronDown, Minus, Clock
 } from "lucide-react";
 import { useLocation, useParams } from "wouter";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { toast } from "sonner";
+
+// Distinct colors for up to 10 participants
+const SLEEVE_COLORS = [
+  "oklch(0.65 0.18 250)",  // blue
+  "oklch(0.65 0.18 145)",  // green
+  "oklch(0.65 0.22 25)",   // red/orange
+  "oklch(0.65 0.18 300)",  // purple
+  "oklch(0.65 0.18 60)",   // yellow
+  "oklch(0.65 0.18 200)",  // cyan
+  "oklch(0.65 0.22 350)",  // pink
+  "oklch(0.65 0.18 170)",  // teal
+  "oklch(0.65 0.18 330)",  // magenta
+  "oklch(0.65 0.18 90)",   // lime
+];
+
+function reallocationLabel(interval: string) {
+  if (interval === "3months") return "Every 3 months";
+  if (interval === "6months") return "Every 6 months";
+  return "Annually";
+}
 
 export default function GroupDashboard() {
   const { id } = useParams<{ id: string }>();
@@ -27,6 +56,11 @@ export default function GroupDashboard() {
 
   const { data: group } = trpc.group.get.useQuery(
     { groupId },
+    { enabled: !!groupId }
+  );
+
+  const { data: leaderboardSnapshots } = trpc.portfolio.getLeaderboardSnapshots.useQuery(
+    { groupId, limit: 90 },
     { enabled: !!groupId }
   );
 
@@ -46,6 +80,49 @@ export default function GroupDashboard() {
     setRefreshing(true);
     refreshAllMutation.mutate({ groupId });
   };
+
+  // Build multi-line chart data from leaderboard snapshots
+  const { chartData, chartConfig } = useMemo(() => {
+    const series = leaderboardSnapshots?.series;
+    if (!series || series.length === 0) {
+      return { chartData: [], chartConfig: {} as ChartConfig };
+    }
+
+    // Collect all unique dates across all series
+    const dateSet = new Set<string>();
+    series.forEach((s: { sleeveId: number; displayName: string; isMe: boolean; data: { date: string; totalValue: number }[] }) => {
+      s.data.forEach((d: { date: string; totalValue: number }) => dateSet.add(d.date));
+    });
+    const sortedDates = Array.from(dateSet);
+
+    // Build a map: date -> sleeveId -> totalValue
+    const valueMap = new Map<string, Map<number, number>>();
+    series.forEach((s: { sleeveId: number; displayName: string; isMe: boolean; data: { date: string; totalValue: number }[] }) => {
+      s.data.forEach((d: { date: string; totalValue: number }) => {
+        if (!valueMap.has(d.date)) valueMap.set(d.date, new Map());
+        valueMap.get(d.date)!.set(s.sleeveId, d.totalValue);
+      });
+    });
+
+    const data = sortedDates.map((date) => {
+      const row: Record<string, string | number> = { date };
+      series.forEach((s: { sleeveId: number }) => {
+        const v = valueMap.get(date)?.get(s.sleeveId);
+        if (v !== undefined) row[`sleeve_${s.sleeveId}`] = v;
+      });
+      return row;
+    });
+
+    const config: ChartConfig = {};
+    series.forEach((s: { sleeveId: number; displayName: string }, i: number) => {
+      config[`sleeve_${s.sleeveId}`] = {
+        label: s.displayName,
+        color: SLEEVE_COLORS[i % SLEEVE_COLORS.length],
+      };
+    });
+
+    return { chartData: data, chartConfig: config };
+  }, [leaderboardSnapshots]);
 
   if (isLoading) {
     return (
@@ -85,6 +162,8 @@ export default function GroupDashboard() {
         return lastRefreshed.toLocaleDateString("en-US", { month: "short", day: "numeric" });
       })()
     : "never";
+
+  const reallocationInterval = leaderboard.group?.reallocationInterval || "6months";
 
   return (
     <div className="min-h-screen bg-background">
@@ -161,7 +240,7 @@ export default function GroupDashboard() {
             value={leaderboard.group?.nextReallocationDate
               ? new Date(leaderboard.group.nextReallocationDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
               : "Not set"}
-            sub={leaderboard.group?.reallocationInterval === "6months" ? "Every 6 months" : "Annually"}
+            sub={reallocationLabel(reallocationInterval)}
             subClass="text-muted-foreground"
           />
         </div>
@@ -171,6 +250,10 @@ export default function GroupDashboard() {
             <TabsTrigger value="leaderboard" className="gap-2">
               <Trophy className="w-3.5 h-3.5" />
               Leaderboard
+            </TabsTrigger>
+            <TabsTrigger value="chart" className="gap-2">
+              <BarChart2 className="w-3.5 h-3.5" />
+              Performance
             </TabsTrigger>
             <TabsTrigger value="my-sleeve" className="gap-2">
               <Wallet className="w-3.5 h-3.5" />
@@ -197,6 +280,74 @@ export default function GroupDashboard() {
                 />
               ))}
             </div>
+          </TabsContent>
+
+          {/* PERFORMANCE CHART TAB */}
+          <TabsContent value="chart">
+            <Card className="border-border/50 bg-card/80">
+              <CardHeader className="pb-2 pt-4 px-4">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-medium">Portfolio Value Over Time</CardTitle>
+                  <span className="text-xs text-muted-foreground">All managers · last 90 days</span>
+                </div>
+              </CardHeader>
+              <CardContent className="px-2 pb-4">
+                {chartData.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-48 text-muted-foreground text-sm gap-2">
+                    <RefreshCw className="w-5 h-5" />
+                    <p>No snapshot data yet.</p>
+                    <p className="text-xs">Click Refresh to record the first data point for all sleeves.</p>
+                  </div>
+                ) : (
+                  <ChartContainer config={chartConfig} className="h-[280px] w-full">
+                    <LineChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border) / 0.3)" />
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: 10 }}
+                        tickLine={false}
+                        axisLine={false}
+                        interval="preserveStartEnd"
+                      />
+                      <YAxis
+                        tick={{ fontSize: 10 }}
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                        width={48}
+                      />
+                      <ChartTooltip
+                        content={
+                          <ChartTooltipContent
+                            formatter={(value, name) => [
+                              <span key="val" className="font-mono font-bold">{formatCurrency(Number(value))}</span>,
+                              chartConfig[name as string]?.label || name,
+                            ]}
+                            labelFormatter={(label) => label}
+                          />
+                        }
+                      />
+                      <Legend
+                        formatter={(value) => chartConfig[value]?.label || value}
+                        wrapperStyle={{ fontSize: "11px", paddingTop: "8px" }}
+                      />
+                      {Object.keys(chartConfig).map((key, i) => (
+                        <Line
+                          key={key}
+                          type="monotone"
+                          dataKey={key}
+                          stroke={SLEEVE_COLORS[i % SLEEVE_COLORS.length]}
+                          strokeWidth={2}
+                          dot={false}
+                          activeDot={{ r: 4, strokeWidth: 0 }}
+                          connectNulls
+                        />
+                      ))}
+                    </LineChart>
+                  </ChartContainer>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* MY SLEEVE TAB */}

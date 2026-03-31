@@ -18,7 +18,7 @@ export default function CreateGroup() {
     description: "",
     totalCapital: 1000000,
     maxParticipants: 5,
-    reallocationInterval: "6months" as "6months" | "12months",
+    reallocationInterval: "6months" as "3months" | "6months" | "12months",
     reallocationPercent: 5,
   });
   const [created, setCreated] = useState<{ id: number; inviteCode: string } | null>(null);
@@ -180,6 +180,7 @@ export default function CreateGroup() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="3months">Every 3 Months</SelectItem>
                     <SelectItem value="6months">Every 6 Months</SelectItem>
                     <SelectItem value="12months">Annually (12 Months)</SelectItem>
                   </SelectContent>

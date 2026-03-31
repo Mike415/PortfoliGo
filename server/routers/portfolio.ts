@@ -76,6 +76,97 @@ export const portfolioRouter = router({
       };
     }),
 
+  // Get any sleeve by ID — any group member can view (read-only for non-owners)
+  getSleeveById: protectedProcedure
+    .input(z.object({ sleeveId: z.number(), groupId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      const membership = await db.getGroupMembership(input.groupId, ctx.user.id);
+      if (!membership) throw new TRPCError({ code: "FORBIDDEN", message: "Not a member of this group" });
+
+      const sleeve = await db.getSleeveById(input.sleeveId);
+      if (!sleeve || sleeve.groupId !== input.groupId) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Sleeve not found" });
+      }
+
+      const owner = await db.getUserById(sleeve.userId);
+      const positions = await db.getPositionsForSleeve(sleeve.id);
+      const isOwner = sleeve.userId === ctx.user.id;
+
+      return {
+        ...sleeve,
+        allocatedCapital: parseFloat(sleeve.allocatedCapital),
+        cashBalance: parseFloat(sleeve.cashBalance),
+        positionsValue: parseFloat(sleeve.positionsValue),
+        totalValue: parseFloat(sleeve.totalValue),
+        realizedPnl: parseFloat(sleeve.realizedPnl),
+        unrealizedPnl: parseFloat(sleeve.unrealizedPnl),
+        returnPct: parseFloat(sleeve.returnPct),
+        isOwner,
+        ownerDisplayName: owner?.displayName || owner?.username || "Unknown",
+        positions: positions.map((p) => ({
+          ...p,
+          quantity: parseFloat(p.quantity),
+          avgCostBasis: parseFloat(p.avgCostBasis),
+          currentPrice: p.currentPrice ? parseFloat(p.currentPrice) : 0,
+          currentValue: p.currentValue ? parseFloat(p.currentValue) : 0,
+          unrealizedPnl: p.unrealizedPnl ? parseFloat(p.unrealizedPnl) : 0,
+          unrealizedPnlPct: p.unrealizedPnlPct ? parseFloat(p.unrealizedPnlPct) : 0,
+          isShort: p.isShort === 1,
+        })),
+      };
+    }),
+
+  // Get snapshots for ALL sleeves in a group (for leaderboard multi-line chart)
+  getLeaderboardSnapshots: protectedProcedure
+    .input(z.object({ groupId: z.number(), limit: z.number().int().min(1).max(365).default(90) }))
+    .query(async ({ input, ctx }) => {
+      const membership = await db.getGroupMembership(input.groupId, ctx.user.id);
+      if (!membership) throw new TRPCError({ code: "FORBIDDEN", message: "Not a member of this group" });
+
+      const sleeves = await db.getSleevesForGroup(input.groupId);
+      if (sleeves.length === 0) return { series: [], dates: [] };
+
+      const sleeveIds = sleeves.map((s) => s.id);
+      const allSnaps = await db.getSnapshotsForSleeves(sleeveIds, input.limit);
+
+      // Build a map: sleeveId → sorted snapshots (ascending)
+      const bySleeveId = new Map<number, { date: string; totalValue: number }[]>();
+      for (const sleeve of sleeves) {
+        bySleeveId.set(sleeve.id, []);
+      }
+      for (const snap of allSnaps) {
+        const arr = bySleeveId.get(snap.sleeveId);
+        if (arr) {
+          arr.push({
+            date: new Date(snap.snapshotAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+            totalValue: parseFloat(snap.totalValue),
+          });
+        }
+      }
+      // Sort each series ascending
+      for (const arr of Array.from(bySleeveId.values())) {
+        arr.sort((a: { date: string; totalValue: number }, b: { date: string; totalValue: number }) =>
+          new Date(a.date).getTime() - new Date(b.date).getTime()
+        );
+      }
+
+      // Build per-sleeve series with user info
+      const series = await Promise.all(
+        sleeves.map(async (sleeve) => {
+          const user = await db.getUserById(sleeve.userId);
+          return {
+            sleeveId: sleeve.id,
+            userId: sleeve.userId,
+            displayName: user?.displayName || user?.username || "Unknown",
+            isMe: sleeve.userId === ctx.user.id,
+            data: bySleeveId.get(sleeve.id) ?? [],
+          };
+        })
+      );
+
+      return { series };
+    }),
+
   // Get equity curve snapshots for my sleeve
   getSnapshots: protectedProcedure
     .input(z.object({ groupId: z.number(), limit: z.number().int().min(1).max(365).default(90) }))
