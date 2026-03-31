@@ -1,11 +1,26 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
-import { ENV } from './_core/env';
+import {
+  groups,
+  groupMembers,
+  positions,
+  priceCache,
+  reallocationChanges,
+  reallocationEvents,
+  sessions,
+  sleeves,
+  trades,
+  users,
+  type InsertGroup,
+  type InsertGroupMember,
+  type InsertPosition,
+  type InsertSleeve,
+  type InsertTrade,
+  type InsertUser,
+} from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
@@ -18,75 +33,342 @@ export async function getDb() {
   return _db;
 }
 
-export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) {
-    throw new Error("User openId is required for upsert");
-  }
+// ─── Users ────────────────────────────────────────────────────────────────────
 
+export async function createUser(data: InsertUser) {
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
-  }
+  if (!db) throw new Error("Database not available");
+  await db.insert(users).values(data);
+  const result = await db.select().from(users).where(eq(users.username, data.username)).limit(1);
+  return result[0];
+}
 
-  try {
-    const values: InsertUser = {
-      openId: user.openId,
-    };
-    const updateSet: Record<string, unknown> = {};
+export async function getUserByUsername(username: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.select().from(users).where(eq(users.username, username)).limit(1);
+  return result[0] ?? null;
+}
 
-    const textFields = ["name", "email", "loginMethod"] as const;
-    type TextField = (typeof textFields)[number];
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result[0] ?? null;
+}
 
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
+export async function updateUserLastSignedIn(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, id));
+}
 
-    textFields.forEach(assignNullable);
+// ─── Sessions ─────────────────────────────────────────────────────────────────
 
-    if (user.lastSignedIn !== undefined) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
-    }
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
-    }
+export async function createSession(id: string, userId: number, expiresAt: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(sessions).values({ id, userId, expiresAt });
+}
 
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = new Date();
-    }
+export async function getSession(id: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
+  return result[0] ?? null;
+}
 
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = new Date();
-    }
+export async function deleteSession(id: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(sessions).where(eq(sessions.id, id));
+}
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
-  } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
-    throw error;
+export async function cleanExpiredSessions() {
+  const db = await getDb();
+  if (!db) return;
+  const now = Date.now();
+  // Delete sessions where expiresAt < now
+  const allSessions = await db.select().from(sessions);
+  const expired = allSessions.filter((s) => s.expiresAt < now).map((s) => s.id);
+  if (expired.length > 0) {
+    await db.delete(sessions).where(inArray(sessions.id, expired));
   }
 }
+
+// ─── Groups ───────────────────────────────────────────────────────────────────
+
+export async function createGroup(data: InsertGroup) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(groups).values(data);
+  const result = await db.select().from(groups).where(eq(groups.inviteCode, data.inviteCode)).limit(1);
+  return result[0];
+}
+
+export async function getGroupById(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.select().from(groups).where(eq(groups.id, id)).limit(1);
+  return result[0] ?? null;
+}
+
+export async function getGroupByInviteCode(code: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.select().from(groups).where(eq(groups.inviteCode, code)).limit(1);
+  return result[0] ?? null;
+}
+
+export async function getGroupsByUser(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const memberships = await db.select().from(groupMembers).where(eq(groupMembers.userId, userId));
+  if (memberships.length === 0) return [];
+  const groupIds = memberships.map((m) => m.groupId);
+  return db.select().from(groups).where(inArray(groups.id, groupIds));
+}
+
+export async function updateGroup(id: number, data: Partial<InsertGroup>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(groups).set(data).where(eq(groups.id, id));
+}
+
+// ─── Group Members ────────────────────────────────────────────────────────────
+
+export async function addGroupMember(data: InsertGroupMember) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(groupMembers).values(data);
+}
+
+export async function getGroupMembers(groupId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(groupMembers).where(eq(groupMembers.groupId, groupId));
+}
+
+export async function getGroupMembership(groupId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db
+    .select()
+    .from(groupMembers)
+    .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId)))
+    .limit(1);
+  return result[0] ?? null;
+}
+
+// ─── Sleeves ──────────────────────────────────────────────────────────────────
+
+export async function createSleeve(data: InsertSleeve) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(sleeves).values(data);
+  const result = await db
+    .select()
+    .from(sleeves)
+    .where(and(eq(sleeves.groupId, data.groupId), eq(sleeves.userId, data.userId)))
+    .limit(1);
+  return result[0];
+}
+
+export async function getSleeveById(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.select().from(sleeves).where(eq(sleeves.id, id)).limit(1);
+  return result[0] ?? null;
+}
+
+export async function getSleeveByUserAndGroup(userId: number, groupId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db
+    .select()
+    .from(sleeves)
+    .where(and(eq(sleeves.userId, userId), eq(sleeves.groupId, groupId)))
+    .limit(1);
+  return result[0] ?? null;
+}
+
+export async function getSleevesForGroup(groupId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(sleeves).where(eq(sleeves.groupId, groupId));
+}
+
+export async function updateSleeve(id: number, data: Partial<InsertSleeve>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(sleeves).set(data).where(eq(sleeves.id, id));
+}
+
+// ─── Positions ────────────────────────────────────────────────────────────────
+
+export async function getPositionsForSleeve(sleeveId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(positions).where(eq(positions.sleeveId, sleeveId));
+}
+
+export async function getPositionByTicker(sleeveId: number, ticker: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db
+    .select()
+    .from(positions)
+    .where(and(eq(positions.sleeveId, sleeveId), eq(positions.ticker, ticker)))
+    .limit(1);
+  return result[0] ?? null;
+}
+
+export async function upsertPosition(data: InsertPosition) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await getPositionByTicker(data.sleeveId, data.ticker);
+  if (existing) {
+    await db.update(positions).set(data).where(eq(positions.id, existing.id));
+    return { ...existing, ...data };
+  } else {
+    await db.insert(positions).values(data);
+    const result = await db
+      .select()
+      .from(positions)
+      .where(and(eq(positions.sleeveId, data.sleeveId), eq(positions.ticker, data.ticker)))
+      .limit(1);
+    return result[0];
+  }
+}
+
+export async function deletePosition(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(positions).where(eq(positions.id, id));
+}
+
+export async function getAllPositionTickers(groupId: number): Promise<string[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const groupSleeves = await getSleevesForGroup(groupId);
+  if (groupSleeves.length === 0) return [];
+  const sleeveIds = groupSleeves.map((s) => s.id);
+  const allPositions = await db
+    .select({ ticker: positions.ticker })
+    .from(positions)
+    .where(inArray(positions.sleeveId, sleeveIds));
+  const tickerSet = new Set(allPositions.map((p) => p.ticker));
+  return Array.from(tickerSet);
+}
+
+// ─── Trades ───────────────────────────────────────────────────────────────────
+
+export async function createTrade(data: InsertTrade) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(trades).values(data);
+}
+
+export async function getTradesForSleeve(sleeveId: number, limit = 50) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(trades).where(eq(trades.sleeveId, sleeveId)).limit(limit);
+}
+
+// ─── Price Cache ──────────────────────────────────────────────────────────────
+
+export async function getPriceCacheEntry(ticker: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.select().from(priceCache).where(eq(priceCache.ticker, ticker)).limit(1);
+  return result[0] ?? null;
+}
+
+export async function upsertPriceCache(
+  ticker: string,
+  assetType: "stock" | "etf" | "crypto",
+  price: string,
+  change: string | null,
+  changePct: string | null,
+  name: string | null
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .insert(priceCache)
+    .values({ ticker, assetType, price, change, changePct, name })
+    .onDuplicateKeyUpdate({ set: { price, change, changePct, name, updatedAt: new Date() } });
+}
+
+// ─── Reallocation ─────────────────────────────────────────────────────────────
+
+export async function createReallocationEvent(
+  groupId: number,
+  triggeredBy: number,
+  notes: string | null
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(reallocationEvents).values({ groupId, triggeredBy, notes });
+  const result = await db
+    .select()
+    .from(reallocationEvents)
+    .where(eq(reallocationEvents.groupId, groupId))
+    .limit(1);
+  // Get the latest one
+  const all = await db.select().from(reallocationEvents).where(eq(reallocationEvents.groupId, groupId));
+  return all[all.length - 1];
+}
+
+export async function createReallocationChange(data: {
+  eventId: number;
+  sleeveId: number;
+  userId: number;
+  previousAllocation: string;
+  newAllocation: string;
+  changeAmount: string;
+  returnPctAtTime: string;
+  rank: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(reallocationChanges).values(data);
+}
+
+export async function getReallocationHistory(groupId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const events = await db
+    .select()
+    .from(reallocationEvents)
+    .where(eq(reallocationEvents.groupId, groupId));
+  return events;
+}
+
+// ─── OAuth SDK Compatibility Shims ───────────────────────────────────────────
+// The framework's sdk.ts calls getUserByOpenId and upsertUser with openId.
+// For our custom auth, we store userId as the "openId" in the JWT session.
+// These shims map those calls to our username-based user table.
 
 export async function getUserByOpenId(openId: string) {
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
-
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
+  // openId here is actually the stringified user ID from our custom auth
+  const numericId = parseInt(openId, 10);
+  if (isNaN(numericId)) return null;
+  return getUserById(numericId);
 }
 
-// TODO: add feature queries here as your schema grows.
+export async function upsertUser(data: {
+  openId: string;
+  name?: string | null;
+  email?: string | null;
+  loginMethod?: string | null;
+  lastSignedIn?: Date;
+  role?: "user" | "admin";
+}) {
+  // For our custom auth, upsertUser is only called to update lastSignedIn
+  const numericId = parseInt(data.openId, 10);
+  if (isNaN(numericId)) return;
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ lastSignedIn: data.lastSignedIn ?? new Date() }).where(eq(users.id, numericId));
+}
