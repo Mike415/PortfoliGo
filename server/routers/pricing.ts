@@ -1,19 +1,10 @@
 import { TRPCError } from "@trpc/server";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
-import { callDataApi } from "../_core/dataApi";
+import { protectedProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import { z } from "zod";
+import { getQuote, getHistory as yahooGetHistory, searchTickers, type AssetType } from "../yahooFinance";
 
 const PRICE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-type AssetType = "stock" | "etf" | "crypto";
-
-function detectAssetType(ticker: string, instrumentType?: string): AssetType {
-  if (instrumentType === "CRYPTOCURRENCY") return "crypto";
-  if (instrumentType === "ETF") return "etf";
-  if (ticker.includes("-USD") || ticker.includes("-BTC") || ticker.includes("-ETH")) return "crypto";
-  return "stock";
-}
 
 async function fetchLivePrice(ticker: string): Promise<{
   ticker: string;
@@ -24,32 +15,14 @@ async function fetchLivePrice(ticker: string): Promise<{
   assetType: AssetType;
 } | null> {
   try {
-    const result = await callDataApi("YahooFinance/get_stock_chart", {
-      query: {
-        symbol: ticker,
-        interval: "1d",
-        range: "5d",
-      },
-    });
-
-    const chartResult = (result as any)?.chart?.result?.[0];
-    if (!chartResult) return null;
-
-    const meta = chartResult.meta;
-    const price = meta?.regularMarketPrice ?? meta?.chartPreviousClose ?? 0;
-    const previousClose = meta?.chartPreviousClose ?? meta?.previousClose ?? price;
-    const change = price - previousClose;
-    const changePct = previousClose !== 0 ? (change / previousClose) * 100 : 0;
-    const instrumentType = meta?.instrumentType;
-    const assetType = detectAssetType(ticker, instrumentType);
-
+    const q = await getQuote(ticker);
     return {
-      ticker,
-      price,
-      change,
-      changePct,
-      name: meta?.longName || meta?.shortName || null,
-      assetType,
+      ticker: q.ticker,
+      price: q.price,
+      change: q.change,
+      changePct: q.changePct,
+      name: q.name,
+      assetType: q.assetType,
     };
   } catch (err) {
     console.error(`[Pricing] Failed to fetch price for ${ticker}:`, err);
@@ -75,7 +48,7 @@ export const pricingRouter = router({
             change: cached.change ? parseFloat(cached.change) : null,
             changePct: cached.changePct ? parseFloat(cached.changePct) : null,
             name: cached.name,
-            assetType: cached.assetType,
+            assetType: cached.assetType as AssetType,
             fromCache: true,
           };
         }
@@ -90,7 +63,7 @@ export const pricingRouter = router({
             change: cached.change ? parseFloat(cached.change) : null,
             changePct: cached.changePct ? parseFloat(cached.changePct) : null,
             name: cached.name,
-            assetType: cached.assetType,
+            assetType: cached.assetType as AssetType,
             fromCache: true,
           };
         }
@@ -138,7 +111,7 @@ export const pricingRouter = router({
                   change: cached.change ? parseFloat(cached.change) : null,
                   changePct: cached.changePct ? parseFloat(cached.changePct) : null,
                   name: cached.name,
-                  assetType: cached.assetType,
+                  assetType: cached.assetType as AssetType,
                   fromCache: true,
                 };
                 return;
@@ -163,7 +136,7 @@ export const pricingRouter = router({
                 change: cached.change ? parseFloat(cached.change) : null,
                 changePct: cached.changePct ? parseFloat(cached.changePct) : null,
                 name: cached.name,
-                assetType: cached.assetType,
+                assetType: cached.assetType as AssetType,
                 fromCache: true,
               };
             }
@@ -188,50 +161,41 @@ export const pricingRouter = router({
     .query(async ({ input }) => {
       const ticker = input.ticker.toUpperCase();
       try {
-        const result = await callDataApi("YahooFinance/get_stock_chart", {
-          query: {
-            symbol: ticker,
-            interval: input.interval,
-            range: input.range,
-          },
-        });
+        const history = await yahooGetHistory(ticker, input.range, input.interval);
 
-        const chartResult = (result as any)?.chart?.result?.[0];
-        if (!chartResult) throw new TRPCError({ code: "NOT_FOUND", message: "No data found" });
-
-        const timestamps: number[] = chartResult.timestamp ?? [];
-        const quotes = chartResult.indicators?.quote?.[0] ?? {};
-        const closes: (number | null)[] = quotes.close ?? [];
-
-        const dataPoints = timestamps
-          .map((ts: number, i: number) => ({
-            date: ts * 1000,
-            close: closes[i] ?? null,
+        const dataPoints = history.timestamps
+          .map((ts, i) => ({
+            date: ts,
+            close: history.closes[i] ?? null,
           }))
           .filter((d) => d.close !== null);
+
+        // Get name from cache or a fresh quote
+        let name = ticker;
+        const cached = await db.getPriceCacheEntry(ticker);
+        if (cached?.name) {
+          name = cached.name;
+        }
 
         return {
           ticker,
           range: input.range,
           data: dataPoints,
-          meta: {
-            name: chartResult.meta?.longName || chartResult.meta?.shortName || ticker,
-            currency: chartResult.meta?.currency || "USD",
-          },
+          meta: { name, currency: "USD" },
         };
       } catch (err) {
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Failed to fetch history for ${ticker}` });
       }
     }),
 
-  // Search for a ticker symbol — returns curated matches + live resolution
+  // Search for a ticker symbol — live Yahoo Finance search + curated fallback
   search: protectedProcedure
     .input(z.object({ query: z.string().min(1).max(30) }))
     .query(async ({ input }) => {
-      const q = input.query.trim().toUpperCase();
+      const q = input.query.trim();
       if (!q) return [];
 
-      // Curated list of popular tickers with names and types
+      // Curated list of popular tickers for instant offline matching
       const POPULAR: { ticker: string; name: string; assetType: AssetType }[] = [
         // Large-cap stocks
         { ticker: "AAPL", name: "Apple Inc.", assetType: "stock" },
@@ -273,7 +237,6 @@ export const pricingRouter = router({
         { ticker: "MS", name: "Morgan Stanley", assetType: "stock" },
         { ticker: "BA", name: "Boeing Company", assetType: "stock" },
         { ticker: "CAT", name: "Caterpillar Inc.", assetType: "stock" },
-        { ticker: "MMM", name: "3M Company", assetType: "stock" },
         { ticker: "GE", name: "GE Aerospace", assetType: "stock" },
         { ticker: "F", name: "Ford Motor Company", assetType: "stock" },
         { ticker: "GM", name: "General Motors Company", assetType: "stock" },
@@ -281,40 +244,31 @@ export const pricingRouter = router({
         { ticker: "VZ", name: "Verizon Communications Inc.", assetType: "stock" },
         { ticker: "UBER", name: "Uber Technologies Inc.", assetType: "stock" },
         { ticker: "LYFT", name: "Lyft Inc.", assetType: "stock" },
-        { ticker: "SNAP", name: "Snap Inc.", assetType: "stock" },
         { ticker: "SPOT", name: "Spotify Technology S.A.", assetType: "stock" },
+        { ticker: "SNAP", name: "Snap Inc.", assetType: "stock" },
+        { ticker: "TWTR", name: "Twitter / X Corp.", assetType: "stock" },
         { ticker: "COIN", name: "Coinbase Global Inc.", assetType: "stock" },
         { ticker: "HOOD", name: "Robinhood Markets Inc.", assetType: "stock" },
-        { ticker: "SQ", name: "Block Inc. (Square)", assetType: "stock" },
-        { ticker: "SHOP", name: "Shopify Inc.", assetType: "stock" },
         { ticker: "PLTR", name: "Palantir Technologies Inc.", assetType: "stock" },
+        { ticker: "RBLX", name: "Roblox Corporation", assetType: "stock" },
         { ticker: "RIVN", name: "Rivian Automotive Inc.", assetType: "stock" },
         { ticker: "LCID", name: "Lucid Group Inc.", assetType: "stock" },
-        // Popular ETFs
+        // ETFs
         { ticker: "SPY", name: "SPDR S&P 500 ETF Trust", assetType: "etf" },
         { ticker: "QQQ", name: "Invesco QQQ Trust (Nasdaq 100)", assetType: "etf" },
         { ticker: "IWM", name: "iShares Russell 2000 ETF", assetType: "etf" },
         { ticker: "VTI", name: "Vanguard Total Stock Market ETF", assetType: "etf" },
         { ticker: "VOO", name: "Vanguard S&P 500 ETF", assetType: "etf" },
-        { ticker: "VEA", name: "Vanguard FTSE Developed Markets ETF", assetType: "etf" },
-        { ticker: "VWO", name: "Vanguard FTSE Emerging Markets ETF", assetType: "etf" },
         { ticker: "GLD", name: "SPDR Gold Shares ETF", assetType: "etf" },
         { ticker: "SLV", name: "iShares Silver Trust ETF", assetType: "etf" },
         { ticker: "TLT", name: "iShares 20+ Year Treasury Bond ETF", assetType: "etf" },
-        { ticker: "HYG", name: "iShares iBoxx High Yield Corporate Bond ETF", assetType: "etf" },
-        { ticker: "XLF", name: "Financial Select Sector SPDR ETF", assetType: "etf" },
-        { ticker: "XLK", name: "Technology Select Sector SPDR ETF", assetType: "etf" },
-        { ticker: "XLE", name: "Energy Select Sector SPDR ETF", assetType: "etf" },
-        { ticker: "XLV", name: "Health Care Select Sector SPDR ETF", assetType: "etf" },
-        { ticker: "XLI", name: "Industrial Select Sector SPDR ETF", assetType: "etf" },
+        { ticker: "XLF", name: "Financial Select Sector SPDR Fund", assetType: "etf" },
+        { ticker: "XLK", name: "Technology Select Sector SPDR Fund", assetType: "etf" },
+        { ticker: "XLE", name: "Energy Select Sector SPDR Fund", assetType: "etf" },
         { ticker: "ARKK", name: "ARK Innovation ETF", assetType: "etf" },
-        { ticker: "ARKG", name: "ARK Genomic Revolution ETF", assetType: "etf" },
         { ticker: "SQQQ", name: "ProShares UltraPro Short QQQ", assetType: "etf" },
         { ticker: "TQQQ", name: "ProShares UltraPro QQQ", assetType: "etf" },
-        { ticker: "SPXS", name: "Direxion Daily S&P 500 Bear 3X ETF", assetType: "etf" },
-        { ticker: "SPXL", name: "Direxion Daily S&P 500 Bull 3X ETF", assetType: "etf" },
-        { ticker: "DIA", name: "SPDR Dow Jones Industrial Average ETF", assetType: "etf" },
-        { ticker: "EEM", name: "iShares MSCI Emerging Markets ETF", assetType: "etf" },
+        { ticker: "VXX", name: "iPath Series B S&P 500 VIX ETN", assetType: "etf" },
         // Crypto
         { ticker: "BTC-USD", name: "Bitcoin", assetType: "crypto" },
         { ticker: "ETH-USD", name: "Ethereum", assetType: "crypto" },
@@ -324,66 +278,39 @@ export const pricingRouter = router({
         { ticker: "ADA-USD", name: "Cardano", assetType: "crypto" },
         { ticker: "DOGE-USD", name: "Dogecoin", assetType: "crypto" },
         { ticker: "AVAX-USD", name: "Avalanche", assetType: "crypto" },
-        { ticker: "LINK-USD", name: "Chainlink", assetType: "crypto" },
         { ticker: "DOT-USD", name: "Polkadot", assetType: "crypto" },
         { ticker: "MATIC-USD", name: "Polygon (MATIC)", assetType: "crypto" },
+        { ticker: "LINK-USD", name: "Chainlink", assetType: "crypto" },
         { ticker: "LTC-USD", name: "Litecoin", assetType: "crypto" },
         { ticker: "UNI-USD", name: "Uniswap", assetType: "crypto" },
         { ticker: "ATOM-USD", name: "Cosmos", assetType: "crypto" },
-        { ticker: "NEAR-USD", name: "NEAR Protocol", assetType: "crypto" },
+        { ticker: "SHIB-USD", name: "Shiba Inu", assetType: "crypto" },
       ];
 
-      // 1. Filter curated list by ticker prefix or name substring
+      const qUpper = q.toUpperCase();
+
+      // 1. Match from curated list first (instant, no API call)
       const curatedMatches = POPULAR.filter(
-        (item) =>
-          item.ticker.startsWith(q) ||
-          item.name.toUpperCase().includes(q) ||
-          item.ticker.includes(q)
-      ).slice(0, 8);
+        (p) =>
+          p.ticker.startsWith(qUpper) ||
+          p.name.toUpperCase().includes(qUpper) ||
+          p.ticker === qUpper
+      ).slice(0, 5);
 
-      // 2. If the query looks like an exact ticker (short, no spaces), also try live resolution
-      const looksLikeTicker = /^[A-Z0-9\-\.]{1,12}$/.test(q) && !q.includes(" ");
-      const alreadyInCurated = curatedMatches.some((m) => m.ticker === q);
-
-      if (looksLikeTicker && !alreadyInCurated) {
-        // Check cache first
-        const cached = await db.getPriceCacheEntry(q);
-        if (cached) {
-          curatedMatches.unshift({
-            ticker: cached.ticker,
-            name: cached.name || cached.ticker,
-            assetType: cached.assetType as AssetType,
-          });
-        } else {
-          // Try live fetch (only if query is 2+ chars to avoid noise)
-          if (q.length >= 2) {
-            const live = await fetchLivePrice(q);
-            if (live) {
-              // Cache it
-              await db.upsertPriceCache(
-                q,
-                live.assetType,
-                String(live.price),
-                live.change !== null ? String(live.change) : null,
-                live.changePct !== null ? String(live.changePct) : null,
-                live.name
-              );
-              curatedMatches.unshift({
-                ticker: live.ticker,
-                name: live.name || live.ticker,
-                assetType: live.assetType,
-              });
-            }
-          }
-        }
+      // 2. Try live Yahoo Finance search for anything not fully covered
+      let liveResults: { ticker: string; name: string; assetType: AssetType }[] = [];
+      try {
+        const yahooResults = await searchTickers(q, 8);
+        // Merge: add live results not already in curated matches
+        const curatedTickers = new Set(curatedMatches.map((c) => c.ticker));
+        liveResults = yahooResults
+          .filter((r) => !curatedTickers.has(r.ticker))
+          .slice(0, 5);
+      } catch (err) {
+        // Live search failure is non-fatal — curated results still work
+        console.warn("[Pricing] Live search failed, using curated only:", (err as Error).message);
       }
 
-      // Deduplicate by ticker
-      const seen = new Set<string>();
-      return curatedMatches.filter((m) => {
-        if (seen.has(m.ticker)) return false;
-        seen.add(m.ticker);
-        return true;
-      }).slice(0, 8);
+      return [...curatedMatches, ...liveResults].slice(0, 8);
     }),
 });

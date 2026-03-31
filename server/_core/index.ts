@@ -35,6 +35,8 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
+  // Health check for Railway / load balancers
+  app.get("/api/health", (_req, res) => res.json({ status: "ok", ts: Date.now() }));
   // tRPC API
   app.use(
     "/api/trpc",

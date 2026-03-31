@@ -1,17 +1,8 @@
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
-import { callDataApi } from "../_core/dataApi";
 import * as db from "../db";
 import { z } from "zod";
-
-type AssetType = "stock" | "etf" | "crypto";
-
-function detectAssetType(ticker: string, instrumentType?: string): AssetType {
-  if (instrumentType === "CRYPTOCURRENCY") return "crypto";
-  if (instrumentType === "ETF") return "etf";
-  if (ticker.includes("-USD") || ticker.includes("-BTC") || ticker.includes("-ETH")) return "crypto";
-  return "stock";
-}
+import { getQuote, type AssetType } from "../yahooFinance";
 
 async function fetchPrice(ticker: string, forceRefresh = false): Promise<{ price: number; assetType: AssetType; name: string | null }> {
   const CACHE_TTL = 5 * 60 * 1000;
@@ -23,22 +14,9 @@ async function fetchPrice(ticker: string, forceRefresh = false): Promise<{ price
     }
   }
 
-  // Note: do NOT pass boolean fields — the API rejects them
-  const result = await callDataApi("YahooFinance/get_stock_chart", {
-    query: { symbol: ticker, interval: "1d", range: "5d" },
-  });
-  const meta = (result as any)?.chart?.result?.[0]?.meta;
-  if (!meta) throw new TRPCError({ code: "NOT_FOUND", message: `Could not find price for ${ticker}` });
-
-  const price = meta.regularMarketPrice ?? meta.chartPreviousClose ?? 0;
-  const assetType = detectAssetType(ticker, meta.instrumentType);
-  const name = meta.longName || meta.shortName || null;
-  const previousClose = meta.chartPreviousClose ?? meta.previousClose ?? price;
-  const change = price - previousClose;
-  const changePct = previousClose !== 0 ? (change / previousClose) * 100 : 0;
-
-  await db.upsertPriceCache(ticker, assetType, String(price), String(change), String(changePct), name);
-  return { price, assetType, name };
+  const q = await getQuote(ticker);
+  await db.upsertPriceCache(ticker, q.assetType, String(q.price), String(q.change), String(q.changePct), q.name);
+  return { price: q.price, assetType: q.assetType, name: q.name };
 }
 
 export const portfolioRouter = router({
@@ -163,7 +141,9 @@ export const portfolioRouter = router({
       const totalValue = input.quantity * input.price;
 
       // Determine asset type
-      let assetType: AssetType = input.assetType || detectAssetType(ticker);
+      // Determine asset type from input or heuristic (crypto tickers end in -USD)
+      let assetType: AssetType = input.assetType ||
+        (ticker.includes("-USD") || ticker.includes("-BTC") || ticker.includes("-ETH") ? "crypto" : "stock");
 
       if (input.side === "buy") {
         const cashBalance = parseFloat(sleeve.cashBalance);

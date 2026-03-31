@@ -68,3 +68,11 @@
 - [x] Frontend: autocomplete dropdown in trade form as user types
 - [x] Frontend: remove manual asset type selector — auto-filled from search result
 - [x] Frontend: show company/asset name alongside ticker in search results
+
+## Railway Deployment
+- [ ] Replace Manus data API with direct Yahoo Finance public endpoint (crumb/cookie auth)
+- [ ] Swap pricing.ts and portfolio.ts to use new Yahoo client
+- [ ] Add railway.toml deployment config
+- [ ] Add Dockerfile for Railway build
+- [ ] Document environment variables needed on Railway
+- [ ] Push Railway-ready build to GitHub
