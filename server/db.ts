@@ -1,8 +1,9 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   groups,
   groupMembers,
+  portfolioSnapshots,
   positions,
   priceCache,
   reallocationChanges,
@@ -13,6 +14,7 @@ import {
   users,
   type InsertGroup,
   type InsertGroupMember,
+  type InsertPortfolioSnapshot,
   type InsertPosition,
   type InsertSleeve,
   type InsertTrade,
@@ -133,6 +135,35 @@ export async function updateGroup(id: number, data: Partial<InsertGroup>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(groups).set(data).where(eq(groups.id, id));
+}
+
+export async function deleteGroup(groupId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Get all sleeves in the group
+  const groupSleeves = await db.select().from(sleeves).where(eq(sleeves.groupId, groupId));
+  const sleeveIds = groupSleeves.map((s) => s.id);
+  if (sleeveIds.length > 0) {
+    // Delete snapshots
+    await db.delete(portfolioSnapshots).where(inArray(portfolioSnapshots.sleeveId, sleeveIds));
+    // Delete trades
+    await db.delete(trades).where(inArray(trades.sleeveId, sleeveIds));
+    // Delete positions
+    await db.delete(positions).where(inArray(positions.sleeveId, sleeveIds));
+    // Delete sleeves
+    await db.delete(sleeves).where(eq(sleeves.groupId, groupId));
+  }
+  // Delete reallocation data
+  const events = await db.select().from(reallocationEvents).where(eq(reallocationEvents.groupId, groupId));
+  if (events.length > 0) {
+    const eventIds = events.map((e) => e.id);
+    await db.delete(reallocationChanges).where(inArray(reallocationChanges.eventId, eventIds));
+    await db.delete(reallocationEvents).where(eq(reallocationEvents.groupId, groupId));
+  }
+  // Delete group members
+  await db.delete(groupMembers).where(eq(groupMembers.groupId, groupId));
+  // Delete the group itself
+  await db.delete(groups).where(eq(groups.id, groupId));
 }
 
 // ─── Group Members ────────────────────────────────────────────────────────────
@@ -343,6 +374,25 @@ export async function getReallocationHistory(groupId: number) {
     .from(reallocationEvents)
     .where(eq(reallocationEvents.groupId, groupId));
   return events;
+}
+
+// ─── Portfolio Snapshots ─────────────────────────────────────────────────────
+
+export async function insertSnapshot(data: InsertPortfolioSnapshot) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(portfolioSnapshots).values(data);
+}
+
+export async function getSnapshotsForSleeve(sleeveId: number, limit = 90) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(portfolioSnapshots)
+    .where(eq(portfolioSnapshots.sleeveId, sleeveId))
+    .orderBy(desc(portfolioSnapshots.snapshotAt))
+    .limit(limit);
 }
 
 // ─── OAuth SDK Compatibility Shims ───────────────────────────────────────────

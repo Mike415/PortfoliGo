@@ -2,18 +2,30 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { formatCurrency, formatPct, formatQuantity, pnlClass } from "@/lib/format";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, Plus, RefreshCw, TrendingUp, Wallet, Clock, ChevronUp, ChevronDown, Search } from "lucide-react";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
+} from "recharts";
+import {
+  ArrowLeft, Plus, RefreshCw, TrendingUp, Wallet, Clock,
+  ChevronUp, ChevronDown, Search, TrendingDown, BarChart2
+} from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
 type AssetType = "stock" | "etf" | "crypto";
 
@@ -21,6 +33,13 @@ const ASSET_BADGE: Record<AssetType, string> = {
   stock: "text-blue-400 bg-blue-400/10 border-blue-400/20",
   etf: "text-purple-400 bg-purple-400/10 border-purple-400/20",
   crypto: "text-orange-400 bg-orange-400/10 border-orange-400/20",
+};
+
+const equityChartConfig: ChartConfig = {
+  totalValue: {
+    label: "Portfolio Value",
+    color: "oklch(0.65 0.18 250)",
+  },
 };
 
 export default function SleeveManager() {
@@ -38,6 +57,11 @@ export default function SleeveManager() {
 
   const { data: trades } = trpc.portfolio.getTrades.useQuery(
     { groupId: gId, limit: 50 },
+    { enabled: !!gId }
+  );
+
+  const { data: snapshots } = trpc.portfolio.getSnapshots.useQuery(
+    { groupId: gId, limit: 90 },
     { enabled: !!gId }
   );
 
@@ -67,6 +91,21 @@ export default function SleeveManager() {
   }
 
   const totalPnl = sleeve.realizedPnl + sleeve.unrealizedPnl;
+
+  // Prepare chart data — add a "today" point if no snapshot yet
+  const chartData = snapshots && snapshots.length > 0
+    ? snapshots.map((s) => ({
+        date: new Date(s.snapshotAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        totalValue: s.totalValue,
+      }))
+    : [{ date: "Now", totalValue: sleeve.totalValue }];
+
+  const chartMin = chartData.length > 1
+    ? Math.min(...chartData.map((d) => d.totalValue)) * 0.995
+    : sleeve.allocatedCapital * 0.97;
+  const chartMax = chartData.length > 1
+    ? Math.max(...chartData.map((d) => d.totalValue)) * 1.005
+    : sleeve.totalValue * 1.03;
 
   return (
     <div className="min-h-screen bg-background">
@@ -149,6 +188,76 @@ export default function SleeveManager() {
           </Card>
         </div>
 
+        {/* Equity Curve */}
+        <Card className="border-border/50 bg-card/80 mb-6">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BarChart2 className="w-4 h-4 text-muted-foreground" />
+                <CardTitle className="text-sm font-medium">Portfolio Value History</CardTitle>
+              </div>
+              <span className={`text-xs font-mono font-medium ${pnlClass(totalPnl)}`}>
+                {totalPnl >= 0 ? "+" : ""}{formatCurrency(totalPnl)} total P&L
+              </span>
+            </div>
+          </CardHeader>
+          <CardContent className="px-2 pb-4">
+            {chartData.length <= 1 ? (
+              <div className="flex items-center justify-center h-32 text-muted-foreground text-sm gap-2">
+                <RefreshCw className="w-4 h-4" />
+                Refresh prices to start recording your equity curve
+              </div>
+            ) : (
+              <ChartContainer config={equityChartConfig} className="h-[180px] w-full">
+                <AreaChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="oklch(0.65 0.18 250)" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="oklch(0.65 0.18 250)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border) / 0.3)" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 10 }}
+                    tickLine={false}
+                    axisLine={false}
+                    interval="preserveStartEnd"
+                  />
+                  <YAxis
+                    domain={[chartMin, chartMax]}
+                    tick={{ fontSize: 10 }}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                    width={48}
+                  />
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        formatter={(value) => [
+                          <span key="val" className="font-mono font-bold">{formatCurrency(Number(value))}</span>,
+                          "Value",
+                        ]}
+                        labelFormatter={(label) => label}
+                      />
+                    }
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="totalValue"
+                    stroke="oklch(0.65 0.18 250)"
+                    strokeWidth={2}
+                    fill="url(#equityGradient)"
+                    dot={false}
+                    activeDot={{ r: 4, strokeWidth: 0 }}
+                  />
+                </AreaChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+
         <Tabs defaultValue="positions">
           <TabsList className="mb-4">
             <TabsTrigger value="positions">Positions ({sleeve.positions.length})</TabsTrigger>
@@ -198,16 +307,27 @@ export default function SleeveManager() {
 
 function PositionRow({ position }: { position: any }) {
   const assetBadgeClass = ASSET_BADGE[position.assetType as AssetType] || "";
+  const isShort = position.isShort;
 
   return (
-    <div className="flex items-center gap-4 p-4 rounded-lg border border-border/50 bg-card/50 hover:bg-card/80 transition-colors">
+    <div className={`flex items-center gap-4 p-4 rounded-lg border transition-colors ${
+      isShort
+        ? "border-orange-400/20 bg-orange-400/5 hover:bg-orange-400/10"
+        : "border-border/50 bg-card/50 hover:bg-card/80"
+    }`}>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="font-bold text-sm font-mono">{position.ticker}</span>
           <Badge variant="outline" className={`text-xs ${assetBadgeClass}`}>{position.assetType}</Badge>
+          {isShort && (
+            <Badge variant="outline" className="text-xs text-orange-400 bg-orange-400/10 border-orange-400/20 gap-1">
+              <TrendingDown className="w-2.5 h-2.5" />
+              SHORT
+            </Badge>
+          )}
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">
-          {formatQuantity(position.quantity)} shares · avg {formatCurrency(position.avgCostBasis)}
+          {formatQuantity(position.quantity)} shares · {isShort ? "short @ " : "avg "}{formatCurrency(position.avgCostBasis)}
         </p>
       </div>
       <div className="text-right">
@@ -227,20 +347,31 @@ function PositionRow({ position }: { position: any }) {
 }
 
 function TradeRow({ trade }: { trade: any }) {
-  const isBuy = trade.side === "buy";
+  const sideColors: Record<string, string> = {
+    buy: "text-[oklch(0.65_0.18_145)]",
+    sell: "text-[oklch(0.60_0.22_25)]",
+    short: "text-orange-400",
+    cover: "text-sky-400",
+  };
+  const sideIcons: Record<string, React.ReactNode> = {
+    buy: <ChevronUp className="w-4 h-4" />,
+    sell: <ChevronDown className="w-4 h-4" />,
+    short: <TrendingDown className="w-4 h-4" />,
+    cover: <TrendingUp className="w-4 h-4" />,
+  };
+
   return (
     <div className="flex items-center gap-4 p-3 rounded-lg border border-border/30 bg-card/30 text-sm">
-      <div className={`flex items-center gap-1 font-medium shrink-0 ${isBuy ? "text-[oklch(0.65_0.18_145)]" : "text-[oklch(0.60_0.22_25)]"}`}>
-        {isBuy ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-        {isBuy ? "BUY" : "SELL"}
+      <div className={`flex items-center gap-1 font-medium shrink-0 ${sideColors[trade.side] || "text-muted-foreground"}`}>
+        {sideIcons[trade.side]}
+        {trade.side.toUpperCase()}
       </div>
       <div className="flex-1 min-w-0">
         <span className="font-mono font-bold">{trade.ticker}</span>
         <span className="text-muted-foreground ml-2">{formatQuantity(trade.quantity)} @ {formatCurrency(trade.price)}</span>
       </div>
       <div className="text-right shrink-0">
-        <p className="font-mono font-medium">{formatCurrency(trade.totalValue)}</p>
-        <p className="text-xs text-muted-foreground">
+        <p className="font-mono text-xs text-muted-foreground">
           {new Date(trade.executedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
         </p>
       </div>
@@ -269,7 +400,6 @@ function TickerSearch({
     { enabled: query.length >= 1, staleTime: 30_000 }
   );
 
-  // Close dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (
@@ -364,21 +494,34 @@ function TickerSearch({
 
 // ─── Trade Form ───────────────────────────────────────────────────────────────
 
+type TradeSide = "buy" | "sell" | "short" | "cover";
+
 function TradeForm({ groupId, cashBalance, onSuccess }: { groupId: number; cashBalance: number; onSuccess: () => void }) {
   const [form, setForm] = useState({
     ticker: "",
     name: "",
-    side: "buy" as "buy" | "sell",
+    side: "buy" as TradeSide,
     quantity: "",
     price: "",
     assetType: "stock" as AssetType,
+    isShort: false,
   });
   const utils = trpc.useUtils();
+
+  // When isShort toggle changes, update side accordingly
+  const handleShortToggle = (checked: boolean) => {
+    setForm((f) => ({
+      ...f,
+      isShort: checked,
+      side: checked ? "short" : "buy",
+    }));
+  };
 
   const tradeMutation = trpc.portfolio.addTrade.useMutation({
     onSuccess: () => {
       utils.portfolio.getMySleeve.invalidate();
       utils.portfolio.getTrades.invalidate();
+      utils.portfolio.getSnapshots.invalidate();
       toast.success(`${form.side.toUpperCase()} ${form.ticker} executed`);
       onSuccess();
     },
@@ -399,6 +542,19 @@ function TradeForm({ groupId, cashBalance, onSuccess }: { groupId: number; cashB
   );
 
   const totalValue = parseFloat(form.quantity || "0") * parseFloat(form.price || "0");
+  const isShortMode = form.isShort;
+
+  // For short: side is "short" (open) or "cover" (close)
+  // For long: side is "buy" (open) or "sell" (close)
+  const sideOptions: { value: TradeSide; label: string }[] = isShortMode
+    ? [
+        { value: "short", label: "Short (Open)" },
+        { value: "cover", label: "Cover (Close)" },
+      ]
+    : [
+        { value: "buy", label: "Buy (Long)" },
+        { value: "sell", label: "Sell" },
+      ];
 
   return (
     <form
@@ -430,16 +586,36 @@ function TradeForm({ groupId, cashBalance, onSuccess }: { groupId: number; cashB
         )}
       </div>
 
+      {/* Short toggle */}
+      <div className="flex items-center justify-between rounded-lg border border-border/50 p-3">
+        <div className="flex items-center gap-2">
+          <TrendingDown className={`w-4 h-4 ${isShortMode ? "text-orange-400" : "text-muted-foreground"}`} />
+          <div>
+            <p className="text-sm font-medium">Short Selling</p>
+            <p className="text-xs text-muted-foreground">Profit when price falls</p>
+          </div>
+        </div>
+        <Switch
+          checked={isShortMode}
+          onCheckedChange={handleShortToggle}
+          className="data-[state=checked]:bg-orange-500"
+        />
+      </div>
+
       {/* Side */}
       <div className="space-y-2">
-        <Label>Side</Label>
-        <Select value={form.side} onValueChange={(v) => setForm((f) => ({ ...f, side: v as "buy" | "sell" }))}>
+        <Label>Action</Label>
+        <Select
+          value={form.side}
+          onValueChange={(v) => setForm((f) => ({ ...f, side: v as TradeSide }))}
+        >
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="buy">Buy</SelectItem>
-            <SelectItem value="sell">Sell</SelectItem>
+            {sideOptions.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
@@ -479,7 +655,7 @@ function TradeForm({ groupId, cashBalance, onSuccess }: { groupId: number; cashB
             <span className="text-muted-foreground">Trade Value</span>
             <span className="font-mono font-medium">{formatCurrency(totalValue)}</span>
           </div>
-          {form.side === "buy" && (
+          {(form.side === "buy" || form.side === "cover") && (
             <div className="flex justify-between">
               <span className="text-muted-foreground">Cash After</span>
               <span className={`font-mono font-medium ${cashBalance - totalValue < 0 ? "text-[oklch(0.60_0.22_25)]" : ""}`}>
@@ -487,15 +663,30 @@ function TradeForm({ groupId, cashBalance, onSuccess }: { groupId: number; cashB
               </span>
             </div>
           )}
+          {form.side === "short" && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Cash After (proceeds)</span>
+              <span className="font-mono font-medium text-orange-400">
+                {formatCurrency(cashBalance + totalValue)}
+              </span>
+            </div>
+          )}
+          {isShortMode && (
+            <p className="text-xs text-orange-400/80 mt-1">
+              Short positions profit when the price falls below your entry.
+            </p>
+          )}
         </div>
       )}
 
       <Button
         type="submit"
-        className="w-full"
+        className={`w-full ${isShortMode ? "bg-orange-500 hover:bg-orange-600 text-white" : ""}`}
         disabled={tradeMutation.isPending || !form.ticker || !form.quantity || !form.price}
       >
-        {tradeMutation.isPending ? "Executing..." : `${form.side === "buy" ? "Buy" : "Sell"} ${form.ticker || "..."}`}
+        {tradeMutation.isPending
+          ? "Executing..."
+          : `${form.side.charAt(0).toUpperCase() + form.side.slice(1)} ${form.ticker || "..."}`}
       </Button>
     </form>
   );

@@ -81,6 +81,13 @@
 
 ## Bug Fixes
 - [x] Fix: Leaderboard Portfolio Value incorrect after Refresh (shows wrong total/return %)
+- [x] Fix: Prices not being picked up automatically (switched to query2.finance.yahoo.com with 429 retry backoff)
+
+## New Features (Round 3)
+- [x] Delete competition (admin only, cascades all sleeves/positions/trades)
+- [x] P&L equity curve chart on Sleeve Manager (Recharts area chart from portfolio_snapshots)
+- [x] Last-refreshed timestamp badge on leaderboard
+- [x] Short-selling: trade form toggle, inverted P&L logic, short position indicator
 
 ## New Features (Round 2)
 - [ ] DB: portfolio_snapshots table (sleeveId, totalValue, positionsValue, cashBalance, returnPct, snapshotAt)

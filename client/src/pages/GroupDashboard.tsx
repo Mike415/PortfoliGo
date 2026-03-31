@@ -1,13 +1,13 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
-import { formatCurrency, formatPct, pnlClass, rankBadgeClass } from "@/lib/format";
+import { formatCurrency, formatPct, pnlClass } from "@/lib/format";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  TrendingUp, TrendingDown, ArrowLeft, RefreshCw, Trophy, Wallet,
-  BarChart2, Settings, Plus, ChevronUp, ChevronDown, Minus
+  TrendingUp, ArrowLeft, RefreshCw, Trophy, Wallet,
+  BarChart2, Settings, ChevronUp, ChevronDown, Minus, Clock
 } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { useState } from "react";
@@ -69,6 +69,23 @@ export default function GroupDashboard() {
   const myEntry = leaderboard.entries.find((e) => e.isMe);
   const isAdmin = group?.members?.find((m: any) => m.userId === user?.id)?.role === "admin";
 
+  // Format last-refreshed timestamp
+  const lastRefreshed: Date | null = leaderboard.lastRefreshed
+    ? new Date(leaderboard.lastRefreshed)
+    : null;
+
+  const lastRefreshedLabel = lastRefreshed
+    ? (() => {
+        const diffMs = Date.now() - lastRefreshed.getTime();
+        const diffMin = Math.floor(diffMs / 60_000);
+        if (diffMin < 1) return "just now";
+        if (diffMin < 60) return `${diffMin}m ago`;
+        const diffHr = Math.floor(diffMin / 60);
+        if (diffHr < 24) return `${diffHr}h ago`;
+        return lastRefreshed.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      })()
+    : "never";
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -86,6 +103,13 @@ export default function GroupDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Last refreshed badge */}
+            {lastRefreshed && (
+              <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground border border-border/40 rounded-md px-2 py-1">
+                <Clock className="w-3 h-3" />
+                <span>Prices: {lastRefreshedLabel}</span>
+              </div>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -156,6 +180,13 @@ export default function GroupDashboard() {
 
           {/* LEADERBOARD TAB */}
           <TabsContent value="leaderboard">
+            {/* Mobile last-refreshed badge */}
+            {lastRefreshed && (
+              <div className="sm:hidden flex items-center gap-1.5 text-xs text-muted-foreground mb-3">
+                <Clock className="w-3 h-3" />
+                <span>Prices last updated: {lastRefreshedLabel}</span>
+              </div>
+            )}
             <div className="space-y-2">
               {leaderboard.entries.map((entry) => (
                 <LeaderboardRow

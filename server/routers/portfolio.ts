@@ -19,6 +19,28 @@ async function fetchPrice(ticker: string, forceRefresh = false): Promise<{ price
   return { price: q.price, assetType: q.assetType, name: q.name };
 }
 
+/** Save a snapshot of sleeve state (called after every price refresh) */
+async function saveSnapshot(sleeve: {
+  id: number;
+  totalValue: string;
+  positionsValue: string;
+  cashBalance: string;
+  returnPct: string;
+}) {
+  try {
+    await db.insertSnapshot({
+      sleeveId: sleeve.id,
+      totalValue: sleeve.totalValue,
+      positionsValue: sleeve.positionsValue,
+      cashBalance: sleeve.cashBalance,
+      returnPct: sleeve.returnPct,
+    });
+  } catch (err) {
+    // Non-fatal — don't break the refresh flow
+    console.error("[Portfolio] Failed to save snapshot:", err);
+  }
+}
+
 export const portfolioRouter = router({
   // Get my sleeve for a group
   getMySleeve: protectedProcedure
@@ -49,8 +71,29 @@ export const portfolioRouter = router({
           currentValue: p.currentValue ? parseFloat(p.currentValue) : 0,
           unrealizedPnl: p.unrealizedPnl ? parseFloat(p.unrealizedPnl) : 0,
           unrealizedPnlPct: p.unrealizedPnlPct ? parseFloat(p.unrealizedPnlPct) : 0,
+          isShort: p.isShort === 1,
         })),
       };
+    }),
+
+  // Get equity curve snapshots for my sleeve
+  getSnapshots: protectedProcedure
+    .input(z.object({ groupId: z.number(), limit: z.number().int().min(1).max(365).default(90) }))
+    .query(async ({ input, ctx }) => {
+      const sleeve = await db.getSleeveByUserAndGroup(ctx.user.id, input.groupId);
+      if (!sleeve) return [];
+
+      const snaps = await db.getSnapshotsForSleeve(sleeve.id, input.limit);
+      // Return in ascending order for charting
+      return snaps
+        .reverse()
+        .map((s) => ({
+          snapshotAt: s.snapshotAt,
+          totalValue: parseFloat(s.totalValue),
+          positionsValue: parseFloat(s.positionsValue),
+          cashBalance: parseFloat(s.cashBalance),
+          returnPct: parseFloat(s.returnPct),
+        }));
     }),
 
   // Refresh prices for all positions in a sleeve
@@ -67,17 +110,25 @@ export const portfolioRouter = router({
       if (positions.length === 0) return { success: true, updated: 0 };
 
       // Fetch prices sequentially to avoid race conditions on the accumulator
-      // and to stay within API rate limits
       const priceResults: { posId: number; currentValue: number; unrealizedPnl: number }[] = [];
 
       for (const pos of positions) {
         try {
-          const { price } = await fetchPrice(pos.ticker, true); // force bypass cache on manual refresh
+          const { price } = await fetchPrice(pos.ticker, true);
           const qty = parseFloat(pos.quantity);
           const avgCost = parseFloat(pos.avgCostBasis);
+          const isShort = pos.isShort === 1;
+
+          // For short positions: profit when price falls below avg cost
           const currentValue = qty * price;
-          const unrealizedPnl = currentValue - qty * avgCost;
-          const unrealizedPnlPct = avgCost !== 0 ? ((price - avgCost) / avgCost) * 100 : 0;
+          const unrealizedPnl = isShort
+            ? (avgCost - price) * qty  // short: profit when price drops
+            : (price - avgCost) * qty;
+          const unrealizedPnlPct = avgCost !== 0
+            ? isShort
+              ? ((avgCost - price) / avgCost) * 100
+              : ((price - avgCost) / avgCost) * 100
+            : 0;
 
           await db.upsertPosition({
             ...pos,
@@ -91,7 +142,6 @@ export const portfolioRouter = router({
           priceResults.push({ posId: pos.id, currentValue, unrealizedPnl });
         } catch (err) {
           console.error(`[Portfolio] Failed to refresh price for ${pos.ticker}:`, err);
-          // Use last known value so the total is still meaningful
           const lastValue = pos.currentValue ? parseFloat(pos.currentValue) : 0;
           const lastPnl = pos.unrealizedPnl ? parseFloat(pos.unrealizedPnl) : 0;
           priceResults.push({ posId: pos.id, currentValue: lastValue, unrealizedPnl: lastPnl });
@@ -114,16 +164,25 @@ export const portfolioRouter = router({
         lastPricedAt: new Date(),
       });
 
+      // Save snapshot for equity curve
+      await saveSnapshot({
+        id: sleeve.id,
+        totalValue: String(totalValue),
+        positionsValue: String(totalPositionsValue),
+        cashBalance: String(cashBalance),
+        returnPct: String(returnPct),
+      });
+
       return { success: true, updated: positions.length, totalValue, returnPct };
     }),
 
-  // Add a trade (buy or sell)
+  // Add a trade (buy, sell, short, or cover)
   addTrade: protectedProcedure
     .input(
       z.object({
         groupId: z.number(),
         ticker: z.string().min(1).max(32),
-        side: z.enum(["buy", "sell"]),
+        side: z.enum(["buy", "sell", "short", "cover"]),
         quantity: z.number().positive(),
         price: z.number().positive(),
         assetType: z.enum(["stock", "etf", "crypto"]).optional(),
@@ -140,8 +199,6 @@ export const portfolioRouter = router({
       const ticker = input.ticker.toUpperCase();
       const totalValue = input.quantity * input.price;
 
-      // Determine asset type
-      // Determine asset type from input or heuristic (crypto tickers end in -USD)
       let assetType: AssetType = input.assetType ||
         (ticker.includes("-USD") || ticker.includes("-BTC") || ticker.includes("-ETH") ? "crypto" : "stock");
 
@@ -154,9 +211,14 @@ export const portfolioRouter = router({
           });
         }
 
-        // Update or create position
         const existingPos = await db.getPositionByTicker(sleeve.id, ticker);
         if (existingPos) {
+          if (existingPos.isShort === 1) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `You have a short position in ${ticker}. Use "Cover" to close it first.`,
+            });
+          }
           const existingQty = parseFloat(existingPos.quantity);
           const existingCost = parseFloat(existingPos.avgCostBasis);
           const newQty = existingQty + input.quantity;
@@ -174,18 +236,18 @@ export const portfolioRouter = router({
             assetType,
             quantity: String(input.quantity),
             avgCostBasis: String(input.price),
+            isShort: 0,
           });
         }
 
-        // Deduct cash
         await db.updateSleeve(sleeve.id, {
           cashBalance: String(cashBalance - totalValue),
         });
-      } else {
-        // SELL
+
+      } else if (input.side === "sell") {
         const existingPos = await db.getPositionByTicker(sleeve.id, ticker);
-        if (!existingPos) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `No position in ${ticker}` });
+        if (!existingPos || existingPos.isShort === 1) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `No long position in ${ticker}` });
         }
 
         const existingQty = parseFloat(existingPos.quantity);
@@ -203,17 +265,92 @@ export const portfolioRouter = router({
         if (newQty < 0.000001) {
           await db.deletePosition(existingPos.id);
         } else {
-          await db.upsertPosition({
-            ...existingPos,
-            quantity: String(newQty),
-          });
+          await db.upsertPosition({ ...existingPos, quantity: String(newQty) });
         }
 
-        // Add cash back + realized PnL
         const cashBalance = parseFloat(sleeve.cashBalance);
         const currentRealizedPnl = parseFloat(sleeve.realizedPnl);
         await db.updateSleeve(sleeve.id, {
           cashBalance: String(cashBalance + totalValue),
+          realizedPnl: String(currentRealizedPnl + realizedPnl),
+        });
+
+      } else if (input.side === "short") {
+        // Opening a short: receive cash proceeds, create short position
+        const existingPos = await db.getPositionByTicker(sleeve.id, ticker);
+        if (existingPos && existingPos.isShort === 0) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `You have a long position in ${ticker}. Sell it before shorting.`,
+          });
+        }
+
+        const cashBalance = parseFloat(sleeve.cashBalance);
+
+        if (existingPos && existingPos.isShort === 1) {
+          // Add to existing short
+          const existingQty = parseFloat(existingPos.quantity);
+          const existingCost = parseFloat(existingPos.avgCostBasis);
+          const newQty = existingQty + input.quantity;
+          const newAvgCost = (existingQty * existingCost + input.quantity * input.price) / newQty;
+          await db.upsertPosition({
+            ...existingPos,
+            quantity: String(newQty),
+            avgCostBasis: String(newAvgCost),
+          });
+        } else {
+          await db.upsertPosition({
+            sleeveId: sleeve.id,
+            ticker,
+            assetType,
+            quantity: String(input.quantity),
+            avgCostBasis: String(input.price),
+            isShort: 1,
+          });
+        }
+
+        // Short proceeds credited to cash
+        await db.updateSleeve(sleeve.id, {
+          cashBalance: String(cashBalance + totalValue),
+        });
+
+      } else if (input.side === "cover") {
+        // Covering a short: pay cash to buy back
+        const existingPos = await db.getPositionByTicker(sleeve.id, ticker);
+        if (!existingPos || existingPos.isShort !== 1) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `No short position in ${ticker}` });
+        }
+
+        const existingQty = parseFloat(existingPos.quantity);
+        if (input.quantity > existingQty) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Cannot cover ${input.quantity} shares. Short position is only ${existingQty}`,
+          });
+        }
+
+        const cashBalance = parseFloat(sleeve.cashBalance);
+        if (totalValue > cashBalance) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Insufficient cash to cover. Available: $${cashBalance.toFixed(2)}, Required: $${totalValue.toFixed(2)}`,
+          });
+        }
+
+        const avgCost = parseFloat(existingPos.avgCostBasis);
+        // Short P&L: profit = (short price - cover price) * qty
+        const realizedPnl = (avgCost - input.price) * input.quantity;
+        const newQty = existingQty - input.quantity;
+
+        if (newQty < 0.000001) {
+          await db.deletePosition(existingPos.id);
+        } else {
+          await db.upsertPosition({ ...existingPos, quantity: String(newQty) });
+        }
+
+        const currentRealizedPnl = parseFloat(sleeve.realizedPnl);
+        await db.updateSleeve(sleeve.id, {
+          cashBalance: String(cashBalance - totalValue),
           realizedPnl: String(currentRealizedPnl + realizedPnl),
         });
       }
@@ -288,12 +425,19 @@ export const portfolioRouter = router({
       const totalPortfolioValue = ranked.reduce((sum, e) => sum + e.totalValue, 0);
       const startingCapital = group ? parseFloat(group.totalCapital) : 1000000;
 
+      // Last refreshed = most recent lastPricedAt across all sleeves
+      const lastRefreshed = ranked
+        .map((e) => e.lastPricedAt)
+        .filter((d): d is Date => d !== null && d !== undefined)
+        .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+
       return {
         entries: ranked,
         totalPortfolioValue,
         startingCapital,
         portfolioReturnPct: startingCapital !== 0 ? ((totalPortfolioValue - startingCapital) / startingCapital) * 100 : 0,
         group,
+        lastRefreshed,
       };
     }),
 
@@ -306,21 +450,27 @@ export const portfolioRouter = router({
 
       const sleeves = await db.getSleevesForGroup(input.groupId);
 
-      // Process sleeves sequentially to avoid race conditions and API rate limits
       for (const sleeve of sleeves) {
         const positions = await db.getPositionsForSleeve(sleeve.id);
         if (positions.length === 0) continue;
 
-        // Collect results sequentially — parallel accumulation causes lost updates
         const priceResults: { currentValue: number; unrealizedPnl: number }[] = [];
         for (const pos of positions) {
           try {
-            const { price } = await fetchPrice(pos.ticker, true); // force fresh price
+            const { price } = await fetchPrice(pos.ticker, true);
             const qty = parseFloat(pos.quantity);
             const avgCost = parseFloat(pos.avgCostBasis);
+            const isShort = pos.isShort === 1;
+
             const currentValue = qty * price;
-            const unrealizedPnl = currentValue - qty * avgCost;
-            const unrealizedPnlPct = avgCost !== 0 ? ((price - avgCost) / avgCost) * 100 : 0;
+            const unrealizedPnl = isShort
+              ? (avgCost - price) * qty
+              : (price - avgCost) * qty;
+            const unrealizedPnlPct = avgCost !== 0
+              ? isShort
+                ? ((avgCost - price) / avgCost) * 100
+                : ((price - avgCost) / avgCost) * 100
+              : 0;
 
             await db.upsertPosition({
               ...pos,
@@ -334,7 +484,6 @@ export const portfolioRouter = router({
             priceResults.push({ currentValue, unrealizedPnl });
           } catch (err) {
             console.error(`[Portfolio] Failed to refresh ${pos.ticker}:`, err);
-            // Fall back to last known value so totals remain meaningful
             priceResults.push({
               currentValue: pos.currentValue ? parseFloat(pos.currentValue) : 0,
               unrealizedPnl: pos.unrealizedPnl ? parseFloat(pos.unrealizedPnl) : 0,
@@ -355,6 +504,15 @@ export const portfolioRouter = router({
           unrealizedPnl: String(totalUnrealizedPnl),
           returnPct: String(returnPct),
           lastPricedAt: new Date(),
+        });
+
+        // Save snapshot for equity curve
+        await saveSnapshot({
+          id: sleeve.id,
+          totalValue: String(totalValue),
+          positionsValue: String(totalPositionsValue),
+          cashBalance: String(cashBalance),
+          returnPct: String(returnPct),
         });
       }
 

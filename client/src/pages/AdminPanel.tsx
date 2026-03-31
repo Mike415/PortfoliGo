@@ -4,8 +4,18 @@ import { formatCurrency, formatPct, pnlClass } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Trophy, TrendingDown, AlertTriangle, ChevronUp, ChevronDown, ArrowRight, Clock, Settings } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { ArrowLeft, Trophy, AlertTriangle, ChevronUp, ChevronDown, Clock, Settings, Trash2 } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -40,6 +50,16 @@ export default function AdminPanel() {
     onError: (err) => {
       toast.error(err.message);
       setConfirming(false);
+    },
+  });
+
+  const deleteMutation = trpc.group.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Competition deleted");
+      setLocation("/");
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 
@@ -227,6 +247,46 @@ export default function AdminPanel() {
             )}
           </CardContent>
         </Card>
+
+        {/* Danger Zone — Delete Competition */}
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <Trash2 className="w-4 h-4 text-destructive" />
+              <CardTitle className="text-base text-destructive">Danger Zone</CardTitle>
+            </div>
+            <CardDescription>
+              Permanently delete this competition and all associated data — sleeves, positions, trades, and snapshots. This cannot be undone.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" className="gap-2" disabled={deleteMutation.isPending}>
+                  <Trash2 className="w-4 h-4" />
+                  Delete Competition
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="border-destructive/30">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete "{group?.name}"?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete the competition and all associated data including sleeves, positions, trades, and price history. This action <strong>cannot be undone</strong>.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={() => deleteMutation.mutate({ groupId })}
+                  >
+                    {deleteMutation.isPending ? "Deleting..." : "Yes, delete everything"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </CardContent>
+        </Card>
       </main>
     </div>
   );
@@ -259,7 +319,8 @@ function ReallocationRow({ change, total }: { change: any; total: number }) {
         <p className="font-mono font-bold">{formatCurrency(change.newAllocation, true)}</p>
       </div>
       {hasChange && (
-        <div className={`text-xs font-mono font-bold shrink-0 ${change.changeAmount > 0 ? "text-green-400" : "text-red-400"}`}>
+        <div className={`text-xs font-mono font-bold shrink-0 flex items-center gap-0.5 ${change.changeAmount > 0 ? "text-green-400" : "text-red-400"}`}>
+          {change.changeAmount > 0 ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           {change.changeAmount > 0 ? "+" : ""}{formatCurrency(change.changeAmount, true)}
         </div>
       )}

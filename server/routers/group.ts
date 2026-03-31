@@ -144,6 +144,18 @@ export const groupRouter = router({
       return { ...group, members: memberDetails, sleeves };
     }),
 
+  // Delete a competition (admin only) — cascades all associated data
+  delete: protectedProcedure
+    .input(z.object({ groupId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const membership = await db.getGroupMembership(input.groupId, ctx.user.id);
+      if (!membership || membership.role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Only group admins can delete a competition" });
+      }
+      await db.deleteGroup(input.groupId);
+      return { success: true };
+    }),
+
   // Update group settings (admin only)
   update: protectedProcedure
     .input(
