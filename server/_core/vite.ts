@@ -3,10 +3,13 @@ import fs from "fs";
 import { type Server } from "http";
 import { nanoid } from "nanoid";
 import path from "path";
-import { createServer as createViteServer } from "vite";
-import viteConfig from "../../vite.config";
 
 export async function setupVite(app: Express, server: Server) {
+  // Dynamic import so vite and vite.config are only loaded in dev mode
+  // and never bundled into the production server binary
+  const { createServer: createViteServer } = await import("vite");
+  const { default: viteConfig } = await import("../../vite.config");
+
   const serverOptions = {
     middlewareMode: true,
     hmr: { server },
@@ -25,9 +28,9 @@ export async function setupVite(app: Express, server: Server) {
     const url = req.originalUrl;
 
     try {
+      // In dev mode, import.meta.dirname works fine (tsx runtime)
       const clientTemplate = path.resolve(
-        import.meta.dirname,
-        "../..",
+        process.cwd(),
         "client",
         "index.html"
       );
@@ -48,17 +51,11 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
-  // Resolve the directory of the current file robustly across bundlers.
-  // import.meta.dirname is undefined in some esbuild ESM bundles, so we
-  // fall back to deriving __dirname from import.meta.url.
-  const __dirname: string =
-    (import.meta as unknown as Record<string, unknown>).dirname as string ||
-    path.dirname(new URL(import.meta.url).pathname);
-
-  const distPath =
-    process.env.NODE_ENV === "development"
-      ? path.resolve(__dirname, "../..", "dist", "public")
-      : path.resolve(__dirname, "public");
+  // In production, the Vite client build outputs to dist/public/
+  // The server bundle (dist/index.js) sits in dist/, so public/ is a sibling.
+  // Use process.cwd() which is always /app on Railway, and the build
+  // command outputs to dist/public relative to the project root.
+  const distPath = path.resolve(process.cwd(), "dist", "public");
 
   if (!fs.existsSync(distPath)) {
     console.error(
