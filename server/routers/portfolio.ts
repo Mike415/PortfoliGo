@@ -306,55 +306,57 @@ export const portfolioRouter = router({
 
       const sleeves = await db.getSleevesForGroup(input.groupId);
 
-      await Promise.all(
-        sleeves.map(async (sleeve) => {
-          const positions = await db.getPositionsForSleeve(sleeve.id);
-          if (positions.length === 0) return;
+      // Process sleeves sequentially to avoid race conditions and API rate limits
+      for (const sleeve of sleeves) {
+        const positions = await db.getPositionsForSleeve(sleeve.id);
+        if (positions.length === 0) continue;
 
-          let totalPositionsValue = 0;
-          let totalUnrealizedPnl = 0;
+        // Collect results sequentially — parallel accumulation causes lost updates
+        const priceResults: { currentValue: number; unrealizedPnl: number }[] = [];
+        for (const pos of positions) {
+          try {
+            const { price } = await fetchPrice(pos.ticker, true); // force fresh price
+            const qty = parseFloat(pos.quantity);
+            const avgCost = parseFloat(pos.avgCostBasis);
+            const currentValue = qty * price;
+            const unrealizedPnl = currentValue - qty * avgCost;
+            const unrealizedPnlPct = avgCost !== 0 ? ((price - avgCost) / avgCost) * 100 : 0;
 
-          await Promise.all(
-            positions.map(async (pos) => {
-              try {
-                const { price } = await fetchPrice(pos.ticker);
-                const qty = parseFloat(pos.quantity);
-                const avgCost = parseFloat(pos.avgCostBasis);
-                const currentValue = qty * price;
-                const unrealizedPnl = currentValue - qty * avgCost;
-                const unrealizedPnlPct = avgCost !== 0 ? ((price - avgCost) / avgCost) * 100 : 0;
+            await db.upsertPosition({
+              ...pos,
+              currentPrice: String(price),
+              currentValue: String(currentValue),
+              unrealizedPnl: String(unrealizedPnl),
+              unrealizedPnlPct: String(unrealizedPnlPct),
+              lastPricedAt: new Date(),
+            });
 
-                await db.upsertPosition({
-                  ...pos,
-                  currentPrice: String(price),
-                  currentValue: String(currentValue),
-                  unrealizedPnl: String(unrealizedPnl),
-                  unrealizedPnlPct: String(unrealizedPnlPct),
-                  lastPricedAt: new Date(),
-                });
+            priceResults.push({ currentValue, unrealizedPnl });
+          } catch (err) {
+            console.error(`[Portfolio] Failed to refresh ${pos.ticker}:`, err);
+            // Fall back to last known value so totals remain meaningful
+            priceResults.push({
+              currentValue: pos.currentValue ? parseFloat(pos.currentValue) : 0,
+              unrealizedPnl: pos.unrealizedPnl ? parseFloat(pos.unrealizedPnl) : 0,
+            });
+          }
+        }
 
-                totalPositionsValue += currentValue;
-                totalUnrealizedPnl += unrealizedPnl;
-              } catch (err) {
-                console.error(`[Portfolio] Failed to refresh ${pos.ticker}:`, err);
-              }
-            })
-          );
+        const totalPositionsValue = priceResults.reduce((sum, r) => sum + r.currentValue, 0);
+        const totalUnrealizedPnl = priceResults.reduce((sum, r) => sum + r.unrealizedPnl, 0);
+        const cashBalance = parseFloat(sleeve.cashBalance);
+        const allocatedCapital = parseFloat(sleeve.allocatedCapital);
+        const totalValue = cashBalance + totalPositionsValue;
+        const returnPct = allocatedCapital !== 0 ? ((totalValue - allocatedCapital) / allocatedCapital) * 100 : 0;
 
-          const cashBalance = parseFloat(sleeve.cashBalance);
-          const allocatedCapital = parseFloat(sleeve.allocatedCapital);
-          const totalValue = cashBalance + totalPositionsValue;
-          const returnPct = allocatedCapital !== 0 ? ((totalValue - allocatedCapital) / allocatedCapital) * 100 : 0;
-
-          await db.updateSleeve(sleeve.id, {
-            positionsValue: String(totalPositionsValue),
-            totalValue: String(totalValue),
-            unrealizedPnl: String(totalUnrealizedPnl),
-            returnPct: String(returnPct),
-            lastPricedAt: new Date(),
-          });
-        })
-      );
+        await db.updateSleeve(sleeve.id, {
+          positionsValue: String(totalPositionsValue),
+          totalValue: String(totalValue),
+          unrealizedPnl: String(totalUnrealizedPnl),
+          returnPct: String(returnPct),
+          lastPricedAt: new Date(),
+        });
+      }
 
       return { success: true, sleeveCount: sleeves.length };
     }),

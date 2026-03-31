@@ -76,3 +76,6 @@
 - [ ] Add Dockerfile for Railway build
 - [ ] Document environment variables needed on Railway
 - [ ] Push Railway-ready build to GitHub
+
+## Bug Fixes
+- [x] Fix: Leaderboard Portfolio Value incorrect after Refresh (shows wrong total/return %)
