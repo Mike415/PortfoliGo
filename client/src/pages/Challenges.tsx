@@ -85,6 +85,7 @@ interface EarningsPickRow {
   ticker: string | null;
   assetName: string | null;
   direction: "up" | "down" | null;
+  reportDate: string | null;  // YYYY-MM-DD earnings report date
   prevClose: string | null;
   openPrice: string | null;
   result: "pending" | "correct" | "wrong";
@@ -446,6 +447,7 @@ function EarningsPickDialog({ challenge, onRefresh }: { challenge: ChallengeList
   const [open, setOpen] = useState(false);
   const [direction, setDirection] = useState<"up" | "down" | null>(null);
   const [selectedPick, setSelectedPick] = useState<(SearchResult & { price: number }) | null>(null);
+  const [selectedReportDate, setSelectedReportDate] = useState<string | null>(null); // YYYY-MM-DD from calendar click
   const pickEnd = challenge.pickWindowEnd ? new Date(challenge.pickWindowEnd) : null;
 
   // Compute calendar date range: challenge start → pick deadline (or end)
@@ -515,6 +517,11 @@ function EarningsPickDialog({ challenge, onRefresh }: { challenge: ChallengeList
                       {p.direction === "up" ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
                       {p.direction === "up" ? "Up" : "Down"}
                     </span>
+                    {p.reportDate && (
+                      <span className="text-xs text-muted-foreground ml-1">
+                        Reports {new Date(p.reportDate + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                      </span>
+                    )}
                     <span className="flex-1" />
                     <button
                       type="button"
@@ -554,7 +561,7 @@ function EarningsPickDialog({ challenge, onRefresh }: { challenge: ChallengeList
                             if (!already) {
                               setSelectedPick(null);
                               setDirection(null);
-                              // Pre-fill the search with this symbol
+                              setSelectedReportDate(date); // remember the earnings date from the calendar row
                               setSelectedPick({ ticker: sym, name: sym, assetType: "stock", price: 0 });
                             }
                           }}
@@ -585,8 +592,8 @@ function EarningsPickDialog({ challenge, onRefresh }: { challenge: ChallengeList
             <Label>Search any ticker</Label>
             <TickerSearch
               locked={selectedPick && selectedPick.price > 0 ? selectedPick : null}
-              onSelect={(r) => setSelectedPick(r)}
-              onReset={() => setSelectedPick(null)}
+              onSelect={(r) => { setSelectedPick(r); setSelectedReportDate(null); }}
+              onReset={() => { setSelectedPick(null); setSelectedReportDate(null); }}
             />
           </div>
 
@@ -622,23 +629,202 @@ function EarningsPickDialog({ challenge, onRefresh }: { challenge: ChallengeList
           )}
 
           {selectedPick && direction && (
-            <Button
-              className="w-full"
-              disabled={enterPick.isPending}
-              onClick={() =>
-                enterPick.mutate({
-                  challengeId: challenge.id,
-                  ticker: selectedPick.ticker,
-                  direction,
-                })
-              }
-            >
-              {enterPick.isPending ? "Adding..." : `Add ${selectedPick.ticker} ${direction === "up" ? "↑ Up" : "↓ Down"}`}
-            </Button>
+            <>
+              {selectedReportDate && (
+                <p className="text-xs text-muted-foreground text-center">
+                  Earnings report date: <strong>{new Date(selectedReportDate + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</strong>
+                </p>
+              )}
+              <Button
+                className="w-full"
+                disabled={enterPick.isPending}
+                onClick={() =>
+                  enterPick.mutate({
+                    challengeId: challenge.id,
+                    ticker: selectedPick.ticker,
+                    direction,
+                    reportDate: selectedReportDate ?? undefined,
+                  })
+                }
+              >
+                {enterPick.isPending ? "Adding..." : `Add ${selectedPick.ticker} ${direction === "up" ? "↑ Up" : "↓ Down"}`}
+              </Button>
+            </>
           )}
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Earnings Leaderboard ───────────────────────────────────────────────────
+
+function EarningsLeaderboard({ challenge }: { challenge: ChallengeListItem }) {
+  const { liveStatus, picksHidden, allEarningsPicks } = challenge;
+
+  if (liveStatus === "picking") {
+    const submittedCount = (allEarningsPicks ?? []).filter((p) => p.isMe || !picksHidden).length;
+    const totalCount = (allEarningsPicks ?? []).length;
+    return (
+      <div className="rounded-md bg-muted/30 border border-border/40 px-4 py-3 flex items-center gap-3 text-sm">
+        <EyeOff className="h-4 w-4 text-muted-foreground shrink-0" />
+        <div>
+          <p className="font-medium">Picks are sealed until the pick window closes</p>
+          <p className="text-muted-foreground text-xs mt-0.5">
+            {totalCount === 0
+              ? "No picks submitted yet"
+              : `${totalCount} ${totalCount === 1 ? "pick" : "picks"} submitted — revealed when window closes`}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (liveStatus === "upcoming") {
+    return (
+      <div className="rounded-md bg-muted/20 border border-border/30 px-4 py-3 flex items-center gap-3 text-sm text-muted-foreground">
+        <Clock className="h-4 w-4 shrink-0" />
+        <span>Challenge hasn't started yet</span>
+      </div>
+    );
+  }
+
+  const picks = allEarningsPicks ?? [];
+  if (picks.length === 0) {
+    return (
+      <div className="rounded-md bg-muted/20 border border-border/30 px-4 py-3 text-sm text-muted-foreground text-center">
+        No picks submitted
+      </div>
+    );
+  }
+
+  // Group picks by manager for points summary
+  const byManager: Record<string, { displayName: string; isMe: boolean; picks: typeof picks; points: number }> = {};
+  for (const p of picks) {
+    const key = String(p.userId);
+    if (!byManager[key]) {
+      byManager[key] = { displayName: p.displayName, isMe: p.isMe, picks: [], points: 0 };
+    }
+    byManager[key].picks.push(p);
+    byManager[key].points += p.points;
+  }
+  const managers = Object.values(byManager).sort((a, b) => b.points - a.points);
+
+  // Group all picks by date for the stock list
+  const byDate: Record<string, typeof picks> = {};
+  for (const p of picks) {
+    const key = p.reportDate ?? "Unknown date";
+    if (!byDate[key]) byDate[key] = [];
+    byDate[key].push(p);
+  }
+
+  const isCompleted = liveStatus === "completed";
+
+  return (
+    <div className="space-y-3">
+      {/* Points leaderboard */}
+      <div className="rounded-md border border-border/40 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-muted/40 text-xs text-muted-foreground uppercase tracking-wide">
+              <th className="text-left px-3 py-2 w-8">#</th>
+              <th className="text-left px-3 py-2">Manager</th>
+              <th className="text-right px-3 py-2">Picks</th>
+              <th className="text-right px-3 py-2">Correct</th>
+              <th className="text-right px-3 py-2">Wrong</th>
+              <th className="text-right px-3 py-2">Points</th>
+            </tr>
+          </thead>
+          <tbody>
+            {managers.map((mgr, idx) => {
+              const correct = mgr.picks.filter((p) => p.result === "correct").length;
+              const wrong = mgr.picks.filter((p) => p.result === "wrong").length;
+              return (
+                <tr
+                  key={idx}
+                  className={`border-t border-border/30 ${
+                    mgr.isMe ? "bg-primary/5" : isCompleted && idx === 0 ? "bg-yellow-500/5" : "hover:bg-muted/20"
+                  }`}
+                >
+                  <td className="px-3 py-2.5">
+                    <RankMedal rank={isCompleted ? idx + 1 : null} />
+                    {!isCompleted && <span className="text-xs text-muted-foreground">{idx + 1}</span>}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <span className={`font-medium ${mgr.isMe ? "text-primary" : ""}`}>
+                      {mgr.displayName}
+                      {mgr.isMe && <span className="text-xs text-muted-foreground ml-1">(you)</span>}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-muted-foreground">{mgr.picks.length}</td>
+                  <td className="px-3 py-2.5 text-right text-green-400 font-mono">{correct > 0 ? `+${correct}` : "—"}</td>
+                  <td className="px-3 py-2.5 text-right text-red-400 font-mono">{wrong > 0 ? `-${wrong}` : "—"}</td>
+                  <td className="px-3 py-2.5 text-right">
+                    <span className={`font-mono font-bold ${
+                      mgr.points > 0 ? "text-green-400" : mgr.points < 0 ? "text-red-400" : "text-muted-foreground"
+                    }`}>
+                      {mgr.points > 0 ? `+${mgr.points}` : mgr.points}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* All picks grouped by earnings date */}
+      <div className="space-y-2">
+        {Object.entries(byDate)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([date, datePicks]) => (
+            <div key={date}>
+              <p className="text-xs font-medium text-muted-foreground mb-1">
+                {date === "Unknown date" ? "Date TBD" : new Date(date + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
+              </p>
+              <div className="rounded-md border border-border/40 overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-muted/30 text-muted-foreground">
+                      <th className="text-left px-3 py-1.5">Ticker</th>
+                      <th className="text-left px-3 py-1.5">Manager</th>
+                      <th className="text-center px-3 py-1.5">Direction</th>
+                      <th className="text-right px-3 py-1.5">Result</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {datePicks.map((p) => (
+                      <tr key={p.id} className={`border-t border-border/20 ${p.isMe ? "bg-primary/5" : ""}`}>
+                        <td className="px-3 py-1.5 font-mono font-bold">{p.ticker ?? <span className="text-muted-foreground italic">Hidden</span>}</td>
+                        <td className="px-3 py-1.5">
+                          <span className={p.isMe ? "text-primary" : ""}>{p.displayName}</span>
+                        </td>
+                        <td className="px-3 py-1.5 text-center">
+                          {p.direction ? (
+                            <span className={`flex items-center justify-center gap-1 font-medium ${
+                              p.direction === "up" ? "text-green-400" : "text-red-400"
+                            }`}>
+                              {p.direction === "up" ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                              {p.direction === "up" ? "Up" : "Down"}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground italic">Hidden</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-1.5 text-right">
+                          {p.result === "correct" && <span className="text-green-400 font-bold">+1 ✓</span>}
+                          {p.result === "wrong" && <span className="text-red-400 font-bold">−1 ✗</span>}
+                          {p.result === "pending" && <span className="text-muted-foreground">Pending</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+      </div>
+    </div>
   );
 }
 
@@ -837,7 +1023,11 @@ function ChallengeCard({
               <><Eye className="h-3 w-3" /> Leaderboard</>
             )}
           </div>
-          <CompetitorTable challenge={challenge} entries={challenge.entries} />
+          {challenge.type === "earnings" ? (
+            <EarningsLeaderboard challenge={challenge} />
+          ) : (
+            <CompetitorTable challenge={challenge} entries={challenge.entries} />
+          )}
         </div>
 
         {/* Action buttons */}

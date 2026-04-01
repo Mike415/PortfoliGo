@@ -180,3 +180,11 @@
 - [x] Build yfinance Python microservice for earnings calendar (Flask, port 5001)
 - [x] Backend: earningsCalendar tRPC procedure calling Python service
 - [x] Frontend: EarningsCard pick form shows live calendar grouped by date with one-click pick
+
+## Earnings Date Visibility (Round 13)
+- [x] Schema: add reportDate (text, nullable) to earningsPicks table; push migration
+- [x] Backend: enterEarningsPick accepts optional reportDate; fetches it from yfinance service if not provided
+- [x] Backend: list procedure returns reportDate on each earningsPick row
+- [x] Frontend: submitted picks list shows earnings date next to ticker
+- [x] Frontend: competitor leaderboard shows each pick's earnings date
+- [x] Frontend: calendar quick-pick buttons show the date label inline

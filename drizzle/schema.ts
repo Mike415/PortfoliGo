@@ -244,6 +244,7 @@ export const earningsPicks = mysqlTable("earnings_picks", {
   ticker: varchar("ticker", { length: 32 }).notNull(),
   assetName: varchar("assetName", { length: 128 }),
   direction: mysqlEnum("direction", ["up", "down"]).notNull(),
+  reportDate: varchar("reportDate", { length: 16 }),              // YYYY-MM-DD when earnings are reported
   prevClose: decimal("prevClose", { precision: 18, scale: 6 }),   // price at pick time (pre-earnings close)
   openPrice: decimal("openPrice", { precision: 18, scale: 6 }),   // next-open price fetched at scoring
   result: mysqlEnum("result", ["pending", "correct", "wrong"]).notNull().default("pending"),

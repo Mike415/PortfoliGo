@@ -1,0 +1,1 @@
+ALTER TABLE `earnings_picks` ADD `reportDate` varchar(16);

@@ -566,6 +566,7 @@ export const challengesRouter = router({
         ticker: z.string().min(1).max(32),
         assetName: z.string().optional(),
         direction: z.enum(["up", "down"]),
+        reportDate: z.string().optional(), // YYYY-MM-DD — passed from calendar; auto-fetched if omitted
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -616,6 +617,23 @@ export const challengesRouter = router({
         // Allow entry without price — will be scored manually
       }
 
+      // Resolve reportDate: use provided value, or auto-fetch from yfinance service
+      let reportDate: string | null = input.reportDate ?? null;
+      if (!reportDate) {
+        try {
+          const serviceUrl = process.env.EARNINGS_SERVICE_URL ?? "http://localhost:5001";
+          const res = await fetch(`${serviceUrl}/earnings/ticker?symbol=${encodeURIComponent(ticker)}`, {
+            signal: AbortSignal.timeout(5_000),
+          });
+          if (res.ok) {
+            const data = await res.json() as { symbol: string; reportDate: string | null };
+            reportDate = data.reportDate ?? null;
+          }
+        } catch {
+          // Service unavailable — continue without date
+        }
+      }
+
       await drizzle.insert(earningsPicks).values({
         challengeId: input.challengeId,
         sleeveId: sleeve.id,
@@ -623,13 +641,14 @@ export const challengesRouter = router({
         ticker,
         assetName: input.assetName ?? ticker,
         direction: input.direction,
+        reportDate: reportDate ?? undefined,
         prevClose: prevClose !== null ? String(prevClose) : null,
         openPrice: null,
         result: "pending",
         points: 0,
       });
 
-      return { success: true, ticker, direction: input.direction, prevClose };
+      return { success: true, ticker, direction: input.direction, prevClose, reportDate };
     }),
 
   // ── Delete one earnings pick (only during pick window) ────────────────────
