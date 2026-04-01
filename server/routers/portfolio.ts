@@ -239,7 +239,10 @@ export const portfolioRouter = router({
           priceResults.push({ posId: pos.id, currentValue, unrealizedPnl });
         } catch (err) {
           console.error(`[Portfolio] Failed to refresh price for ${pos.ticker}:`, err);
-          const lastValue = pos.currentValue ? parseFloat(pos.currentValue) : 0;
+          const isShortFallback = pos.isShort === 1;
+          // Apply sign correction even on fallback — DB may have stale positive value from before the fix
+          const rawLastValue = pos.currentValue ? parseFloat(pos.currentValue) : 0;
+          const lastValue = isShortFallback ? -Math.abs(rawLastValue) : Math.abs(rawLastValue);
           const lastPnl = pos.unrealizedPnl ? parseFloat(pos.unrealizedPnl) : 0;
           priceResults.push({ posId: pos.id, currentValue: lastValue, unrealizedPnl: lastPnl });
         }
@@ -629,8 +632,11 @@ export const portfolioRouter = router({
             priceResults.push({ currentValue, unrealizedPnl });
           } catch (err) {
             console.error(`[Portfolio] Failed to refresh ${pos.ticker}:`, err);
+            const isShortFallbackAll = pos.isShort === 1;
+            const rawLastValueAll = pos.currentValue ? parseFloat(pos.currentValue) : 0;
             priceResults.push({
-              currentValue: pos.currentValue ? parseFloat(pos.currentValue) : 0,
+              // Apply sign correction even on fallback — DB may have stale positive value from before the fix
+              currentValue: isShortFallbackAll ? -Math.abs(rawLastValueAll) : Math.abs(rawLastValueAll),
               unrealizedPnl: pos.unrealizedPnl ? parseFloat(pos.unrealizedPnl) : 0,
             });
           }

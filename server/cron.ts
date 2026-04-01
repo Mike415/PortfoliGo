@@ -92,9 +92,11 @@ async function snapshotAllGroups() {
 
               priceResults.push({ currentValue, unrealizedPnl });
             } else {
-              // Use last known values so totals stay consistent
+              // Use last known values so totals stay consistent.
+              // Apply sign correction — DB may have stale positive value from before the fix.
+              const rawCronFallback = pos.currentValue ? parseFloat(pos.currentValue) : 0;
               priceResults.push({
-                currentValue: pos.currentValue ? parseFloat(pos.currentValue) : 0,
+                currentValue: isShort ? -Math.abs(rawCronFallback) : Math.abs(rawCronFallback),
                 unrealizedPnl: pos.unrealizedPnl ? parseFloat(pos.unrealizedPnl) : 0,
               });
             }

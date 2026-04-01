@@ -218,3 +218,6 @@
 
 ## Short Position Bug Fix (Round 20)
 - [x] Fix: opening a short position incorrectly adds to portfolio value (should be neutral / reduce cash margin)
+
+## Short Position Bug Fix Round 2 (Round 21)
+- [x] Fix: portfolio value still shows too high after short open — stale fallback path in all 3 refresh locations was reading raw DB value without sign correction
