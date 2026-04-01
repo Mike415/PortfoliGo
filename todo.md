@@ -226,3 +226,8 @@
 - [x] Backend: use preMarketPrice / postMarketPrice from Yahoo Finance when market is closed
 - [x] Backend: return marketState and priceSource (regular/pre/post) alongside price
 - [x] Frontend: show "PRE" or "AH" badge on position rows and price cards when using extended hours price
+
+## Extended Hours Header Indicator + Auto-Score Earnings (Round 23)
+- [x] Frontend: show PRE/AH chip on sleeve header Total Value card when any position uses extended hours price
+- [x] Backend: 9:35am ET cron to auto-score earnings picks at open price (day after earnings date)
+- [x] Backend: store settlement price on earnings_picks when auto-scored

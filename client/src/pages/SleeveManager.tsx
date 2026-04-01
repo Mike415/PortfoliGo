@@ -210,7 +210,28 @@ export default function SleeveManager() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           <Card className="border-border/50 bg-card/80">
             <CardContent className="p-4">
-              <p className="text-xs text-muted-foreground mb-1">Total Value</p>
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-xs text-muted-foreground">Total Value</p>
+                {(() => {
+                  const extPos = sleeve.positions.find(
+                    (p: any) => p.priceSource === "pre" || p.priceSource === "post"
+                  );
+                  if (!extPos) return null;
+                  const isPre = extPos.priceSource === "pre";
+                  return (
+                    <span
+                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded-sm leading-none ${
+                        isPre
+                          ? "bg-sky-400/15 text-sky-400 border border-sky-400/30"
+                          : "bg-violet-400/15 text-violet-400 border border-violet-400/30"
+                      }`}
+                      title={isPre ? "Priced using pre-market data" : "Priced using after-hours data"}
+                    >
+                      {isPre ? "PRE" : "AH"}
+                    </span>
+                  );
+                })()}
+              </div>
               <p className="text-xl font-bold font-mono">{formatCurrency(sleeve.totalValue)}</p>
               <p className={`text-xs font-mono mt-1 ${pnlClass(sleeve.returnPct)}`}>
                 {formatPct(sleeve.returnPct)} return
