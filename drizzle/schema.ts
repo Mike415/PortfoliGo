@@ -177,6 +177,60 @@ export const portfolioSnapshots = mysqlTable("portfolio_snapshots", {
 export type PortfolioSnapshot = typeof portfolioSnapshots.$inferSelect;
 export type InsertPortfolioSnapshot = typeof portfolioSnapshots.$inferInsert;
 
+// ─── Challenges ─────────────────────────────────────────────────────────────────
+// Two types:
+//   conviction  — managers pick ONE ticker during pickWindowEnd, then hold until holdWindowEnd
+//   sprint      — best portfolio return over a date range wins an allocation bump
+export const challenges = mysqlTable("challenges", {
+  id: int("id").autoincrement().primaryKey(),
+  groupId: int("groupId").notNull(),
+  name: varchar("name", { length: 128 }).notNull(),
+  description: text("description"),
+  type: mysqlEnum("type", ["conviction", "sprint"]).notNull().default("sprint"),
+  // conviction: managers pick a ticker before pickWindowEnd, then hold until holdWindowEnd
+  // sprint: best sleeve return between startDate and endDate wins
+  startDate: timestamp("startDate").notNull(),
+  pickWindowEnd: timestamp("pickWindowEnd"),   // conviction only: deadline to submit pick
+  endDate: timestamp("endDate").notNull(),      // when scoring happens
+  // Prize: allocation bump awarded to winner (in dollars)
+  allocationBump: decimal("allocationBump", { precision: 18, scale: 2 }).notNull().default("5000.00"),
+  // Recurrence
+  recurring: int("recurring").notNull().default(0),  // 1 = auto-recreate after endDate
+  recurringInterval: mysqlEnum("recurringInterval", ["weekly", "monthly"]),
+  status: mysqlEnum("status", ["upcoming", "picking", "active", "scoring", "completed"]).notNull().default("upcoming"),
+  winnerId: int("winnerId"),   // sleeveId of winner, set after scoring
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Challenge = typeof challenges.$inferSelect;
+export type InsertChallenge = typeof challenges.$inferInsert;
+
+// ─── Challenge Entries ────────────────────────────────────────────────────────
+export const challengeEntries = mysqlTable("challenge_entries", {
+  id: int("id").autoincrement().primaryKey(),
+  challengeId: int("challengeId").notNull(),
+  sleeveId: int("sleeveId").notNull(),
+  userId: int("userId").notNull(),
+  // conviction: the ticker they picked and prices at pick/score time
+  ticker: varchar("ticker", { length: 32 }),
+  assetName: varchar("assetName", { length: 128 }),
+  entryPrice: decimal("entryPrice", { precision: 18, scale: 6 }),
+  exitPrice: decimal("exitPrice", { precision: 18, scale: 6 }),
+  // sprint: sleeve totalValue at start and end
+  startValue: decimal("startValue", { precision: 18, scale: 2 }),
+  endValue: decimal("endValue", { precision: 18, scale: 2 }),
+  returnPct: decimal("returnPct", { precision: 10, scale: 4 }),
+  rank: int("rank"),
+  isWinner: int("isWinner").notNull().default(0),
+  enteredAt: timestamp("enteredAt").defaultNow().notNull(),
+  scoredAt: timestamp("scoredAt"),
+});
+
+export type ChallengeEntry = typeof challengeEntries.$inferSelect;
+export type InsertChallengeEntry = typeof challengeEntries.$inferInsert;
+
 // ─── Sessions ─────────────────────────────────────────────────────────────────
 export const sessions = mysqlTable("sessions", {
   id: varchar("id", { length: 64 }).primaryKey(),

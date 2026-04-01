@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import ChallengesPage from "./Challenges";
 import { trpc } from "@/lib/trpc";
 import { formatCurrency, formatPct, pnlClass } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,7 @@ import {
 } from "recharts";
 import {
   TrendingUp, ArrowLeft, RefreshCw, Trophy, Wallet,
-  BarChart2, Settings, ChevronUp, ChevronDown, Minus, Clock
+  BarChart2, Settings, ChevronUp, ChevronDown, Minus, Clock, Swords
 } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { useState, useMemo } from "react";
@@ -260,6 +261,10 @@ export default function GroupDashboard() {
               <Wallet className="w-3.5 h-3.5" />
               My Sleeve
             </TabsTrigger>
+            <TabsTrigger value="challenges" className="gap-2">
+              <Swords className="w-3.5 h-3.5" />
+              Challenges
+            </TabsTrigger>
           </TabsList>
 
           {/* LEADERBOARD TAB */}
@@ -349,6 +354,11 @@ export default function GroupDashboard() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* CHALLENGES TAB */}
+          <TabsContent value="challenges">
+            <ChallengesPage />
           </TabsContent>
 
           {/* MY SLEEVE TAB */}

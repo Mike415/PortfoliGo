@@ -79,6 +79,23 @@
 - [ ] Document environment variables needed on Railway
 - [ ] Push Railway-ready build to GitHub
 
+## Mini-Competitions (Round 5)
+- [x] Schema: challenges table (type: conviction|sprint, pickWindowEnd, holdWindowEnd, recurring, allocationBump)
+- [x] Schema: challenge_entries table (challengeId, sleeveId, ticker, entryPrice, exitPrice, returnPct, rank)
+- [x] Backend: createChallenge, listChallenges, enterChallenge, scoreChallenge, awardChallengeBump procedures
+- [x] Frontend: Admin challenge creator form (conviction play + sprint types)
+- [x] Frontend: Challenges tab on GroupDashboard (active challenges, enter/view, leaderboard)
+- [x] Cron: auto-score challenges when holdWindowEnd passes (manual Score & Award button for admin control)
+
+## Competitor Visibility (Round 6)
+- [x] Backend: list endpoint returns ALL entries per challenge (not just myEntry), with picks hidden during pick window
+- [x] Backend: conviction picks revealed (ticker shown) once pick window closes; hidden as "Submitted ✓" during pick window
+- [x] Frontend: ChallengeCard shows live leaderboard table of all competitors during active/scoring/completed phases
+- [x] Frontend: Sprint leaderboard shows all managers' current return % vs start value
+- [x] Frontend: Conviction leaderboard shows all picks + current return % once pick window closes
+- [x] Frontend: During pick window, show "X of N managers have submitted" count (no names/tickers revealed)
+- [x] Frontend: Completed challenges show full podium (1st/2nd/3rd) with winner highlighted
+
 ## Audit Fixes (Round 4)
 - [x] Audit Fix: 3months reallocation interval not handled in executeReallocation next-date calc — now correctly adds 3 months
 - [x] Audit Fix: returnPct on sleeve not recalculated after reallocation — now recalculated immediately using new allocatedCapital
