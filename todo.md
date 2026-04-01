@@ -161,3 +161,10 @@
 - [x] Backend: update nextReallocationDate calculation to handle new intervals
 - [x] Frontend: update group creation form to show all 6 interval options
 - [x] Frontend: update group settings to show all 6 interval options
+
+## Competition End Date (Round 10)
+- [x] Schema: add endDate (nullable timestamp) to groups table
+- [x] Backend: group.create accepts endDate; group.update allows admin to set/change endDate; leaderboard returns endDate
+- [x] Frontend: CreateGroup — add optional end date picker
+- [x] Frontend: AdminPanel — add end date field with edit/save; show current end date
+- [x] Frontend: GroupDashboard — show countdown to end date; show "Competition Ended" winner banner when past end date

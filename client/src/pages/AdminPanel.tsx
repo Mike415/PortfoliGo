@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Trophy, AlertTriangle, ChevronUp, ChevronDown, Clock, Settings, Trash2, Copy, Check } from "lucide-react";
+import { ArrowLeft, Trophy, AlertTriangle, ChevronUp, ChevronDown, Clock, Settings, Trash2, Copy, Check, Calendar } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -26,6 +26,8 @@ export default function AdminPanel() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
   const [confirming, setConfirming] = useState(false);
+  const [editingEndDate, setEditingEndDate] = useState(false);
+  const [endDateInput, setEndDateInput] = useState("");
 
   const { data: preview, isLoading: previewLoading } = trpc.admin.previewReallocation.useQuery(
     { groupId },
@@ -52,6 +54,17 @@ export default function AdminPanel() {
       setConfirming(false);
     },
   });
+
+  const updateMutation = trpc.group.update.useMutation({
+    onSuccess: () => {
+      toast.success("End date updated!");
+      setEditingEndDate(false);
+      utils.group.get.invalidate({ groupId });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const utils = trpc.useUtils();
 
   const deleteMutation = trpc.group.delete.useMutation({
     onSuccess: () => {
@@ -102,6 +115,7 @@ export default function AdminPanel() {
           </CardHeader>
           <CardContent>
             {group && (
+              <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div className="col-span-2 md:col-span-4">
                   <p className="text-muted-foreground text-xs mb-2">Invite Link — share this with participants</p>
@@ -147,6 +161,67 @@ export default function AdminPanel() {
                   </p>
                 </div>
               </div>
+
+              {/* End Date editor */}
+
+              <div className="mt-4 pt-4 border-t border-border/40">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-muted-foreground" />
+                    <p className="text-sm font-medium">Competition End Date</p>
+                  </div>
+                  {!editingEndDate && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        const d = group.endDate ? new Date(group.endDate).toISOString().split("T")[0] : "";
+                        setEndDateInput(d);
+                        setEditingEndDate(true);
+                      }}
+                    >
+                      {group.endDate ? "Edit" : "Set End Date"}
+                    </Button>
+                  )}
+                </div>
+                {!editingEndDate ? (
+                  <p className="text-sm text-muted-foreground">
+                    {group.endDate
+                      ? new Date(group.endDate).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })
+                      : "No end date set — competition runs indefinitely"}
+                  </p>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={endDateInput}
+                      onChange={(e) => setEndDateInput(e.target.value)}
+                      className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                    <Button
+                      size="sm"
+                      className="h-8 text-xs"
+                      disabled={updateMutation.isPending}
+                      onClick={() => updateMutation.mutate({
+                        groupId,
+                        endDate: endDateInput ? new Date(endDateInput).toISOString() : null,
+                      })}
+                    >
+                      {updateMutation.isPending ? "Saving..." : "Save"}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => setEditingEndDate(false)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
+              </div>
+              </>
             )}
           </CardContent>
         </Card>

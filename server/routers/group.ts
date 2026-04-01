@@ -53,6 +53,7 @@ export const groupRouter = router({
         maxParticipants: z.number().int().min(2).max(20).default(5),
         reallocationInterval: z.enum(["1week", "2weeks", "1month", "3months", "6months", "12months"]).default("3months"),
         reallocationPercent: z.number().min(1).max(50).default(5),
+        endDate: z.string().datetime().optional(), // ISO string from date picker
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -73,6 +74,7 @@ export const groupRouter = router({
         reallocationInterval: input.reallocationInterval,
         reallocationPercent: String(input.reallocationPercent),
         startDate,
+        endDate: input.endDate ? new Date(input.endDate) : null,
         nextReallocationDate,
         createdBy: ctx.user.id,
       });
@@ -200,6 +202,7 @@ export const groupRouter = router({
         description: z.string().max(500).optional(),
         reallocationInterval: z.enum(["1week", "2weeks", "1month", "3months", "6months", "12months"]).optional(),
         reallocationPercent: z.number().min(1).max(50).optional(),
+        endDate: z.string().datetime().nullable().optional(), // ISO string or null to clear
         status: z.enum(["active", "paused", "completed"]).optional(),
       })
     )
@@ -215,6 +218,7 @@ export const groupRouter = router({
       if (updates.description !== undefined) updateData.description = updates.description;
       if (updates.reallocationInterval) updateData.reallocationInterval = updates.reallocationInterval;
       if (updates.reallocationPercent !== undefined) updateData.reallocationPercent = String(updates.reallocationPercent);
+      if (updates.endDate !== undefined) updateData.endDate = updates.endDate ? new Date(updates.endDate) : null;
       if (updates.status) updateData.status = updates.status;
 
       await db.updateGroup(groupId, updateData as any);

@@ -36,6 +36,7 @@ export const groups = mysqlTable("groups", {
   reallocationInterval: mysqlEnum("reallocationInterval", ["1week", "2weeks", "1month", "3months", "6months", "12months"]).notNull().default("3months"),
   reallocationPercent: decimal("reallocationPercent", { precision: 5, scale: 2 }).notNull().default("5.00"),
   startDate: timestamp("startDate").defaultNow().notNull(),
+  endDate: timestamp("endDate"),
   nextReallocationDate: timestamp("nextReallocationDate"),
   lastReallocationDate: timestamp("lastReallocationDate"),
   status: mysqlEnum("status", ["active", "paused", "completed"]).default("active").notNull(),

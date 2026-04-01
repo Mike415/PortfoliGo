@@ -220,6 +220,49 @@ export default function GroupDashboard() {
       </header>
 
       <main className="container py-6">
+        {/* End date banner */}
+        {leaderboard.group?.endDate && (() => {
+          const endDate = new Date(leaderboard.group!.endDate!);
+          const now = new Date();
+          const isEnded = now >= endDate;
+          const diffMs = endDate.getTime() - now.getTime();
+          const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+          const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+          const winner = leaderboard.entries[0];
+
+          if (isEnded) {
+            return (
+              <div className="mb-6 rounded-xl border border-yellow-400/30 bg-yellow-400/5 p-4">
+                <div className="flex items-center gap-3">
+                  <Trophy className="w-6 h-6 text-yellow-400 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-yellow-300">Competition Ended</p>
+                    <p className="text-sm text-muted-foreground">
+                      Final winner: <span className="font-bold text-yellow-300">{winner?.displayName || "—"}</span>
+                      {winner ? ` with ${formatPct(winner.returnPct)} return` : ""}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          const urgentClass = diffDays < 3 ? "border-orange-400/30 bg-orange-400/5" : "border-border/40 bg-card/50";
+          const textClass = diffDays < 3 ? "text-orange-300" : "text-muted-foreground";
+          const countdown = diffDays > 0
+            ? `${diffDays}d ${diffHours}h remaining`
+            : `${diffHours}h remaining`;
+
+          return (
+            <div className={`mb-6 rounded-xl border p-3 flex items-center gap-3 ${urgentClass}`}>
+              <Clock className="w-4 h-4 shrink-0 text-muted-foreground" />
+              <p className={`text-sm ${textClass}`}>
+                Competition ends <span className="font-semibold">{endDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span> — {countdown}
+              </p>
+            </div>
+          );
+        })()}
+
         {/* Portfolio summary */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           <SummaryCard

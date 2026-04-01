@@ -20,6 +20,7 @@ export default function CreateGroup() {
     maxParticipants: 5,
     reallocationInterval: "3months" as "1week" | "2weeks" | "1month" | "3months" | "6months" | "12months",
     reallocationPercent: 5,
+    endDate: "",
   });
   const [created, setCreated] = useState<{ id: number; inviteCode: string } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -88,7 +89,10 @@ export default function CreateGroup() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            createMutation.mutate(form);
+            createMutation.mutate({
+              ...form,
+              endDate: form.endDate ? new Date(form.endDate).toISOString() : undefined,
+            });
           }}
           className="space-y-6"
         >
@@ -204,6 +208,20 @@ export default function CreateGroup() {
                 />
                 <p className="text-xs text-muted-foreground">
                   Bottom performer loses {form.reallocationPercent}% of their sleeve ({formatCurrency(sleeveSize * form.reallocationPercent / 100)}) to the top performer
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Competition End Date <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                <input
+                  type="date"
+                  value={form.endDate}
+                  min={new Date().toISOString().split("T")[0]}
+                  onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <p className="text-xs text-muted-foreground">
+                  When the competition ends, the top-ranked manager is declared the final winner.
                 </p>
               </div>
             </CardContent>
