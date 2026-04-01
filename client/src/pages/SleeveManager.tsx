@@ -65,8 +65,8 @@ export default function SleeveManager() {
   );
 
   const { data: snapshots } = trpc.portfolio.getSnapshots.useQuery(
-    { groupId: gId, limit: 90 },
-    { enabled: !!gId }
+    { groupId: gId, limit: 90, sleeveId: sId || undefined },
+    { enabled: !!gId && !!sId }
   );
 
   const refreshMutation = trpc.portfolio.refreshPrices.useMutation({

@@ -186,9 +186,24 @@ export const portfolioRouter = router({
 
   // Get equity curve snapshots for my sleeve
   getSnapshots: protectedProcedure
-    .input(z.object({ groupId: z.number(), limit: z.number().int().min(1).max(365).default(90) }))
+    .input(z.object({
+      groupId: z.number(),
+      limit: z.number().int().min(1).max(365).default(90),
+      sleeveId: z.number().int().optional(), // when provided, fetch snapshots for this specific sleeve (view-only)
+    }))
     .query(async ({ input, ctx }) => {
-      const sleeve = await db.getSleeveByUserAndGroup(ctx.user.id, input.groupId);
+      // Verify the caller is a member of the group
+      const membership = await db.getGroupMembership(input.groupId, ctx.user.id);
+      if (!membership) throw new TRPCError({ code: "FORBIDDEN", message: "Not a member of this group" });
+
+      let sleeve;
+      if (input.sleeveId) {
+        // View-only: fetch the specific sleeve being viewed (must belong to this group)
+        sleeve = await db.getSleeveById(input.sleeveId);
+        if (!sleeve || sleeve.groupId !== input.groupId) return [];
+      } else {
+        sleeve = await db.getSleeveByUserAndGroup(ctx.user.id, input.groupId);
+      }
       if (!sleeve) return [];
 
       const snaps = await db.getSnapshotsForSleeve(sleeve.id, input.limit);

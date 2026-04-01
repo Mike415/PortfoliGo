@@ -238,3 +238,6 @@
 ## Username Validation + Error Display (Round 25)
 - [x] Fix: username regex rejects spaces — updated regex to allow spaces, trim on input
 - [x] Fix: raw Zod JSON error shown in create account form — now parses JSON and shows first human-readable message
+
+## Wrong Snapshot on View-Only Sleeve (Round 26)
+- [x] Fix: viewing another competitor's sleeve shows the viewer's own chart — getSnapshots now accepts sleeveId param and fetches the correct sleeve's snapshots
