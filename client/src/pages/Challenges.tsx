@@ -440,6 +440,208 @@ function TickerSearch({
   );
 }
 
+// ─── Earnings Pick Dialog ───────────────────────────────────────────────────
+
+function EarningsPickDialog({ challenge, onRefresh }: { challenge: ChallengeListItem; onRefresh: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [direction, setDirection] = useState<"up" | "down" | null>(null);
+  const [selectedPick, setSelectedPick] = useState<(SearchResult & { price: number }) | null>(null);
+  const pickEnd = challenge.pickWindowEnd ? new Date(challenge.pickWindowEnd) : null;
+
+  // Compute calendar date range: challenge start → pick deadline (or end)
+  const calFrom = new Date(challenge.startDate).toISOString().slice(0, 10);
+  const calTo = (pickEnd ?? new Date(challenge.endDate)).toISOString().slice(0, 10);
+
+  const { data: calendar, isLoading: calLoading } = trpc.challenges.earningsCalendar.useQuery(
+    { from: calFrom, to: calTo },
+    { enabled: open, staleTime: 60_000 }
+  );
+
+  const enterPick = trpc.challenges.enterEarningsPick.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Pick added: ${data.ticker} ${data.direction === "up" ? "↑ Up" : "↓ Down"}`);
+      setSelectedPick(null);
+      setDirection(null);
+      onRefresh();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deletePick = trpc.challenges.deleteEarningsPick.useMutation({
+    onSuccess: () => { toast.success("Pick removed"); onRefresh(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // Group calendar by date
+  const byDate = (calendar ?? []).reduce<Record<string, string[]>>((acc, item) => {
+    if (!acc[item.reportDate]) acc[item.reportDate] = [];
+    acc[item.reportDate].push(item.symbol);
+    return acc;
+  }, {});
+
+  const myPicks = challenge.myEarningsPicks ?? [];
+  const myPickTickers = new Set(myPicks.map((p) => p.ticker));
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" className="gap-1">
+          <BarChart2 className="h-3.5 w-3.5" />
+          {myPicks.length > 0 ? `Manage Picks (${myPicks.length})` : "Submit Picks"}
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Earnings Play Picks</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          <p className="text-sm text-muted-foreground">
+            Pick any stocks reporting earnings before{" "}
+            {pickEnd ? pickEnd.toLocaleDateString() : "the deadline"}. Call the direction at next open.
+            <strong> +1 correct, -1 wrong.</strong>
+          </p>
+
+          {/* My current picks */}
+          {myPicks.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Your Picks</p>
+              <div className="space-y-1">
+                {myPicks.map((p) => (
+                  <div key={p.id} className="flex items-center gap-2 rounded-md border border-border/40 bg-muted/30 px-3 py-1.5 text-sm">
+                    <span className="font-mono font-bold w-20 shrink-0">{p.ticker}</span>
+                    <span className={`flex items-center gap-1 font-medium ${
+                      p.direction === "up" ? "text-green-400" : "text-red-400"
+                    }`}>
+                      {p.direction === "up" ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+                      {p.direction === "up" ? "Up" : "Down"}
+                    </span>
+                    <span className="flex-1" />
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:text-destructive transition-colors"
+                      onClick={() => deletePick.mutate({ pickId: p.id })}
+                      disabled={deletePick.isPending}
+                      title="Remove pick"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Calendar quick-pick */}
+          {calLoading ? (
+            <div className="text-sm text-muted-foreground text-center py-4">Loading earnings calendar...</div>
+          ) : Object.keys(byDate).length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Upcoming Earnings</p>
+              {Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b)).map(([date, tickers]) => (
+                <div key={date}>
+                  <p className="text-xs text-muted-foreground mb-1">
+                    {new Date(date + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {tickers.map((sym) => {
+                      const already = myPickTickers.has(sym);
+                      return (
+                        <button
+                          key={sym}
+                          type="button"
+                          disabled={already}
+                          onClick={() => {
+                            if (!already) {
+                              setSelectedPick(null);
+                              setDirection(null);
+                              // Pre-fill the search with this symbol
+                              setSelectedPick({ ticker: sym, name: sym, assetType: "stock", price: 0 });
+                            }
+                          }}
+                          className={`px-2 py-0.5 rounded text-xs font-mono font-bold border transition-colors ${
+                            already
+                              ? "border-green-500/40 bg-green-500/10 text-green-400 cursor-default"
+                              : selectedPick?.ticker === sym
+                              ? "border-primary bg-primary/20 text-primary"
+                              : "border-border/60 bg-muted/40 hover:border-primary/60 hover:bg-primary/10"
+                          }`}
+                        >
+                          {sym} {already ? "✓" : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground text-center py-2">
+              No tracked earnings in this window. Use the search below to add any ticker.
+            </div>
+          )}
+
+          {/* Manual ticker search */}
+          <div className="space-y-1.5">
+            <Label>Search any ticker</Label>
+            <TickerSearch
+              locked={selectedPick && selectedPick.price > 0 ? selectedPick : null}
+              onSelect={(r) => setSelectedPick(r)}
+              onReset={() => setSelectedPick(null)}
+            />
+          </div>
+
+          {/* Direction picker */}
+          {selectedPick && (
+            <div className="space-y-1.5">
+              <Label>Direction at next open</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDirection("up")}
+                  className={`flex items-center justify-center gap-2 rounded-lg border p-2.5 font-medium text-sm transition-colors ${
+                    direction === "up"
+                      ? "border-green-500 bg-green-500/10 text-green-400"
+                      : "border-border hover:border-green-500/50"
+                  }`}
+                >
+                  <TrendingUp className="h-4 w-4" /> Up ↑
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDirection("down")}
+                  className={`flex items-center justify-center gap-2 rounded-lg border p-2.5 font-medium text-sm transition-colors ${
+                    direction === "down"
+                      ? "border-red-500 bg-red-500/10 text-red-400"
+                      : "border-border hover:border-red-500/50"
+                  }`}
+                >
+                  <TrendingDown className="h-4 w-4" /> Down ↓
+                </button>
+              </div>
+            </div>
+          )}
+
+          {selectedPick && direction && (
+            <Button
+              className="w-full"
+              disabled={enterPick.isPending}
+              onClick={() =>
+                enterPick.mutate({
+                  challengeId: challenge.id,
+                  ticker: selectedPick.ticker,
+                  direction,
+                })
+              }
+            >
+              {enterPick.isPending ? "Adding..." : `Add ${selectedPick.ticker} ${direction === "up" ? "↑ Up" : "↓ Down"}`}
+            </Button>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Challenge card ───────────────────────────────────────────────────────────
 
 function ChallengeCard({
@@ -513,8 +715,10 @@ function ChallengeCard({
 
   const typeIcon = challenge.type === "conviction"
     ? <Target className="h-4 w-4 text-blue-400" />
+    : challenge.type === "earnings"
+    ? <BarChart2 className="h-4 w-4 text-green-400" />
     : <Zap className="h-4 w-4 text-yellow-400" />;
-  const typeLabel = challenge.type === "conviction" ? "Conviction Play" : "Sprint";
+  const typeLabel = challenge.type === "conviction" ? "Conviction Play" : challenge.type === "earnings" ? "Earnings Play" : "Sprint";
 
   return (
     <Card className="border border-border/50 bg-card/60">
@@ -585,7 +789,7 @@ function ChallengeCard({
             <span className="text-muted-foreground block">Start</span>
             <p className="font-medium">{startDate.toLocaleDateString()}</p>
           </div>
-          {challenge.type === "conviction" && pickEnd && (
+          {(challenge.type === "conviction" || challenge.type === "earnings") && pickEnd && (
             <div>
               <span className="text-muted-foreground block">Pick deadline</span>
               <p className="font-medium">{pickEnd.toLocaleDateString()}</p>
@@ -610,6 +814,8 @@ function ChallengeCard({
                 ? `Your pick: ${challenge.myEntry.ticker}`
                 : challenge.type === "conviction"
                 ? "Your pick: submitted ✓"
+                : challenge.type === "earnings"
+                ? `${challenge.myEarningsPicks?.length ?? 0} earnings pick${(challenge.myEarningsPicks?.length ?? 0) !== 1 ? "s" : ""} submitted`
                 : "Enrolled"}
               {challenge.myEntry.returnPct !== null && challenge.myEntry.returnPct !== undefined
                 ? ` · ${parseFloat(challenge.myEntry.returnPct) >= 0 ? "+" : ""}${parseFloat(challenge.myEntry.returnPct).toFixed(2)}%`
@@ -636,6 +842,11 @@ function ChallengeCard({
 
         {/* Action buttons */}
         <div className="flex gap-2 flex-wrap">
+          {/* Earnings: submit picks during pick window */}
+          {challenge.type === "earnings" && challenge.liveStatus === "picking" && (
+            <EarningsPickDialog challenge={challenge} onRefresh={onRefresh} />
+          )}
+
           {/* Conviction: submit pick during pick window */}
           {challenge.type === "conviction" && challenge.liveStatus === "picking" && !challenge.myEntry && (
             <Dialog open={pickDialogOpen} onOpenChange={(o) => { setPickDialogOpen(o); if (!o) setSelectedPick(null); }}>
@@ -776,7 +987,7 @@ function ChallengeCard({
 
 function CreateChallengeDialog({ groupId, onCreated }: { groupId: number; onCreated: () => void }) {
   const [open, setOpen] = useState(false);
-  const [type, setType] = useState<"conviction" | "sprint">("sprint");
+  const [type, setType] = useState<"conviction" | "sprint" | "earnings">("sprint");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -813,8 +1024,8 @@ function CreateChallengeDialog({ groupId, onCreated }: { groupId: number; onCrea
       toast.error("Please fill in all required fields");
       return;
     }
-    if (type === "conviction" && !pickWindowEnd) {
-      toast.error("Conviction challenges require a pick deadline");
+    if ((type === "conviction" || type === "earnings") && !pickWindowEnd) {
+      toast.error(`${type === "earnings" ? "Earnings Play" : "Conviction"} challenges require a pick deadline`);
       return;
     }
     create.mutate({
@@ -823,7 +1034,7 @@ function CreateChallengeDialog({ groupId, onCreated }: { groupId: number; onCrea
       description: description.trim() || undefined,
       type,
       startDate,
-      pickWindowEnd: type === "conviction" ? pickWindowEnd : undefined,
+      pickWindowEnd: (type === "conviction" || type === "earnings") ? pickWindowEnd : undefined,
       endDate,
       allocationBump: parseFloat(allocationBump) || 5000,
       recurring,
@@ -845,7 +1056,7 @@ function CreateChallengeDialog({ groupId, onCreated }: { groupId: number; onCrea
 
         <div className="space-y-4 pt-2">
           {/* Type selector */}
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <button
               type="button"
               onClick={() => setType("sprint")}
@@ -874,6 +1085,20 @@ function CreateChallengeDialog({ groupId, onCreated }: { groupId: number; onCrea
               </div>
               <p className="text-xs text-muted-foreground">Each manager picks one ticker; highest gain wins</p>
             </button>
+            <button
+              type="button"
+              onClick={() => setType("earnings")}
+              className={`rounded-lg border p-3 text-left transition-colors ${
+                type === "earnings"
+                  ? "border-primary bg-primary/10"
+                  : "border-border hover:border-primary/50"
+              }`}
+            >
+              <div className="flex items-center gap-2 font-medium text-sm mb-1">
+                <BarChart2 className="h-4 w-4 text-green-500" /> Earnings Play
+              </div>
+              <p className="text-xs text-muted-foreground">Pick stocks reporting earnings; call up or down</p>
+            </button>
           </div>
 
           {/* Name */}
@@ -882,7 +1107,7 @@ function CreateChallengeDialog({ groupId, onCreated }: { groupId: number; onCrea
               Challenge Name <span className="text-destructive">*</span>
             </Label>
             <Input
-              placeholder={type === "conviction" ? "e.g. Q2 Conviction Play" : "e.g. April Sprint"}
+              placeholder={type === "conviction" ? "e.g. Q2 Conviction Play" : type === "earnings" ? "e.g. Q2 Earnings Week" : "e.g. April Sprint"}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
@@ -914,7 +1139,7 @@ function CreateChallengeDialog({ groupId, onCreated }: { groupId: number; onCrea
                 onChange={(e) => setStartDate(e.target.value)}
               />
             </div>
-            {type === "conviction" && (
+            {(type === "conviction" || type === "earnings") && (
               <div className="space-y-1.5">
                 <Label>
                   Pick Deadline <span className="text-destructive">*</span>

@@ -782,13 +782,39 @@ export const challengesRouter = router({
       // Mark challenge as completed
       await drizzle
         .update(challenges)
-        .set({ status: "completed", winnerId: winner?.sleeveId ?? null })
+         .set({ status: "completed", winnerId: winner?.sleeveId ?? null })
         .where(eq(challenges.id, input.challengeId));
-
       return {
         success: true,
         ranked: ranked.map((r, i) => ({ sleeveId: r.sleeveId, rank: i + 1, totalPoints: r.totalPoints })),
         winner: winner ? { sleeveId: winner.sleeveId, totalPoints: winner.totalPoints, bump } : null,
       };
+    }),
+
+  // ── Earnings Calendar ─────────────────────────────────────────────────────
+  // Calls the internal Python/yfinance microservice to get upcoming earnings
+  // for a date range. Used by the Earnings Play pick form.
+  earningsCalendar: protectedProcedure
+    .input(
+      z.object({
+        from: z.string(), // YYYY-MM-DD
+        to: z.string(),   // YYYY-MM-DD
+      })
+    )
+    .query(async ({ input }) => {
+      const serviceUrl = process.env.EARNINGS_SERVICE_URL ?? "http://localhost:5001";
+      try {
+        const res = await fetch(
+          `${serviceUrl}/earnings?from=${encodeURIComponent(input.from)}&to=${encodeURIComponent(input.to)}`,
+          { signal: AbortSignal.timeout(10_000) }
+        );
+        if (!res.ok) throw new Error(`Earnings service returned ${res.status}`);
+        const data = await res.json() as Array<{ symbol: string; reportDate: string }>;
+        return data;
+      } catch (err: any) {
+        console.warn("[earningsCalendar] Service unavailable:", err.message);
+        // Return empty array gracefully — UI will show a fallback message
+        return [] as Array<{ symbol: string; reportDate: string }>;
+      }
     }),
 });

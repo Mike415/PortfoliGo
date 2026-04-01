@@ -168,3 +168,15 @@
 - [x] Frontend: CreateGroup — add optional end date picker
 - [x] Frontend: AdminPanel — add end date field with edit/save; show current end date
 - [x] Frontend: GroupDashboard — show countdown to end date; show "Competition Ended" winner banner when past end date
+
+## Earnings Calendar Integration (Round 11)
+- [ ] Backend: add getEarningsCalendar(from, to) helper using Finnhub free API
+- [ ] Backend: earningsCalendar tRPC procedure returning upcoming earnings for a date range
+- [ ] Frontend: EarningsCard pick form shows live calendar of upcoming earnings grouped by date
+- [ ] Frontend: one-click pick from calendar row (auto-fills ticker + prompts up/down)
+
+## Earnings Calendar Integration v2 (Round 12)
+- [x] Fix: Earnings Play type missing from Create Mini-Competition dialog
+- [x] Build yfinance Python microservice for earnings calendar (Flask, port 5001)
+- [x] Backend: earningsCalendar tRPC procedure calling Python service
+- [x] Frontend: EarningsCard pick form shows live calendar grouped by date with one-click pick
