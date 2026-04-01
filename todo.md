@@ -201,3 +201,7 @@
 - [x] Fix: EarningsPickDialog shows "No tracked earnings" — root cause was Python service timing out due to sequential API calls
 - [x] Fix: Rewrote Python service to pre-warm cache in parallel on startup; requests now return instantly from cache
 - [x] Fix: Static fallback calendar always shown when Python service is unavailable (Railway before redeploy)
+
+## Railway Deploy Fix (Round 16)
+- [x] Fix: nixpacks.toml causing Railway build failure — replaced with Dockerfile using node:22-slim + python3 + pip3
+- [x] Added .dockerignore to exclude node_modules, dist, .git from build context

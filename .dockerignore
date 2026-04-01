@@ -1,0 +1,12 @@
+node_modules
+dist
+.git
+.manus-logs
+*.log
+.env
+.env.*
+client/node_modules
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
