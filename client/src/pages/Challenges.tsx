@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useParams } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -46,6 +46,9 @@ import {
   Eye,
   EyeOff,
   Users,
+  Search,
+  RefreshCw,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -279,6 +282,141 @@ function CompetitorTable({
   );
 }
 
+// ─── Ticker autocomplete (same pattern as SleeveManager) ────────────────────
+
+type AssetType = "stock" | "etf" | "crypto";
+type SearchResult = { ticker: string; name: string; assetType: AssetType };
+
+const ASSET_BADGE: Record<AssetType, string> = {
+  stock:  "text-blue-400 border-blue-400/30",
+  etf:    "text-purple-400 border-purple-400/30",
+  crypto: "text-yellow-400 border-yellow-400/30",
+};
+
+function TickerSearch({
+  onSelect,
+  onReset,
+  locked,
+}: {
+  onSelect: (result: SearchResult & { price: number }) => void;
+  onReset: () => void;
+  locked: (SearchResult & { price: number }) | null;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const utils = trpc.useUtils();
+
+  const { data: results, isFetching } = trpc.pricing.search.useQuery(
+    { query },
+    { enabled: query.length >= 1 && !locked, staleTime: 30_000 }
+  );
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(e.target as Node) &&
+        inputRef.current && !inputRef.current.contains(e.target as Node)
+      ) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleSelect = useCallback(async (item: SearchResult) => {
+    setOpen(false);
+    setQuery(item.ticker);
+    setResolving(true);
+    try {
+      const quote = await utils.pricing.getQuote.fetch({ ticker: item.ticker });
+      onSelect({ ...item, price: quote.price, assetType: quote.assetType as AssetType });
+    } catch {
+      toast.error(`Could not fetch live price for ${item.ticker}. Try again.`);
+      setQuery("");
+    } finally {
+      setResolving(false);
+    }
+  }, [utils, onSelect]);
+
+  if (locked) {
+    return (
+      <div className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2">
+        <span className="font-mono font-bold text-sm flex-1">{locked.ticker}</span>
+        <span className="text-xs text-muted-foreground truncate">{locked.name}</span>
+        <Badge variant="outline" className={`text-xs shrink-0 ${ASSET_BADGE[locked.assetType]}`}>
+          {locked.assetType}
+        </Badge>
+        <span className="font-mono text-sm font-semibold text-green-400">
+          ${locked.price.toFixed(2)}
+        </span>
+        <button
+          type="button"
+          onClick={onReset}
+          className="ml-1 text-muted-foreground hover:text-foreground transition-colors"
+          title="Change ticker"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+        <Input
+          ref={inputRef}
+          placeholder="Search ticker or company name..."
+          value={query}
+          onChange={(e) => { setQuery(e.target.value.toUpperCase()); setOpen(true); }}
+          onFocus={() => query.length >= 1 && setOpen(true)}
+          className="font-mono pl-9 pr-8"
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+        />
+        {(isFetching || resolving) && (
+          <RefreshCw className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground animate-spin" />
+        )}
+      </div>
+
+      {open && results && results.length > 0 && (
+        <div
+          ref={dropdownRef}
+          className="absolute z-50 w-full mt-1 rounded-lg border border-border/60 bg-card shadow-xl overflow-hidden"
+        >
+          {results.map((item) => (
+            <button
+              key={item.ticker}
+              type="button"
+              className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted/50 transition-colors text-left"
+              onMouseDown={(e) => { e.preventDefault(); handleSelect(item as SearchResult); }}
+            >
+              <span className="font-mono font-bold text-sm w-24 shrink-0">{item.ticker}</span>
+              <span className="text-sm text-muted-foreground truncate flex-1">{item.name}</span>
+              <Badge variant="outline" className={`text-xs shrink-0 ${ASSET_BADGE[item.assetType as AssetType] || ""}` }>
+                {item.assetType}
+              </Badge>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {open && query.length >= 1 && (!results || results.length === 0) && !isFetching && (
+        <div
+          ref={dropdownRef}
+          className="absolute z-50 w-full mt-1 rounded-lg border border-border/60 bg-card shadow-xl p-3 text-sm text-muted-foreground"
+        >
+          No results for "{query}" — try an exact ticker (e.g. AAPL, BTC-USD)
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Challenge card ───────────────────────────────────────────────────────────
 
 function ChallengeCard({
@@ -292,7 +430,7 @@ function ChallengeCard({
   groupId: number;
   onRefresh: () => void;
 }) {
-  const [pickTicker, setPickTicker] = useState("");
+  const [selectedPick, setSelectedPick] = useState<(SearchResult & { price: number }) | null>(null);
   const [pickDialogOpen, setPickDialogOpen] = useState(false);
   const [scoreDialogOpen, setScoreDialogOpen] = useState(false);
   const [enrollDialogOpen, setEnrollDialogOpen] = useState(false);
@@ -301,7 +439,15 @@ function ChallengeCard({
     onSuccess: (data) => {
       toast.success(`Pick submitted: ${data.ticker} @ $${data.entryPrice?.toFixed(2) ?? "N/A"}`);
       setPickDialogOpen(false);
-      setPickTicker("");
+      setSelectedPick(null);
+      onRefresh();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deletePick = trpc.challenges.deletePick.useMutation({
+    onSuccess: () => {
+      toast.success("Pick removed — you can now submit a new one");
       onRefresh();
     },
     onError: (e) => toast.error(e.message),
@@ -469,7 +615,7 @@ function ChallengeCard({
         <div className="flex gap-2 flex-wrap">
           {/* Conviction: submit pick during pick window */}
           {challenge.type === "conviction" && challenge.liveStatus === "picking" && !challenge.myEntry && (
-            <Dialog open={pickDialogOpen} onOpenChange={setPickDialogOpen}>
+            <Dialog open={pickDialogOpen} onOpenChange={(o) => { setPickDialogOpen(o); if (!o) setSelectedPick(null); }}>
               <DialogTrigger asChild>
                 <Button size="sm" className="gap-1">
                   <Target className="h-3.5 w-3.5" /> Submit Pick
@@ -486,23 +632,26 @@ function ChallengeCard({
                     submission. <strong>Your pick is hidden from competitors until the pick window closes.</strong>
                   </p>
                   <div className="space-y-1.5">
-                    <Label>Ticker Symbol</Label>
-                    <Input
-                      placeholder="e.g. NVDA, AAPL, BTC-USD"
-                      value={pickTicker}
-                      onChange={(e) => setPickTicker(e.target.value.toUpperCase())}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && pickTicker.trim()) {
-                          enterConviction.mutate({ challengeId: challenge.id, ticker: pickTicker.trim() });
-                        }
-                      }}
+                    <Label>Search Ticker</Label>
+                    <TickerSearch
+                      locked={selectedPick}
+                      onSelect={(r) => setSelectedPick(r)}
+                      onReset={() => setSelectedPick(null)}
                     />
                   </div>
+                  {selectedPick && (
+                    <div className="rounded-md bg-muted/30 border border-border/40 px-3 py-2 text-sm">
+                      <span className="text-muted-foreground">Entry price: </span>
+                      <span className="font-mono font-semibold text-green-400">${selectedPick.price.toFixed(2)}</span>
+                      <span className="text-muted-foreground ml-2 text-xs">(live market price at submission)</span>
+                    </div>
+                  )}
                   <Button
                     className="w-full"
-                    disabled={!pickTicker.trim() || enterConviction.isPending}
+                    disabled={!selectedPick || enterConviction.isPending}
                     onClick={() =>
-                      enterConviction.mutate({ challengeId: challenge.id, ticker: pickTicker.trim() })
+                      selectedPick &&
+                      enterConviction.mutate({ challengeId: challenge.id, ticker: selectedPick.ticker })
                     }
                   >
                     {enterConviction.isPending ? "Submitting..." : "Lock In Pick"}
@@ -510,6 +659,36 @@ function ChallengeCard({
                 </div>
               </DialogContent>
             </Dialog>
+          )}
+
+          {/* Conviction: change pick during pick window (delete + reopen) */}
+          {challenge.type === "conviction" && challenge.liveStatus === "picking" && challenge.myEntry && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" variant="outline" className="gap-1 text-muted-foreground">
+                  <RotateCcw className="h-3.5 w-3.5" /> Change Pick
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Change your pick?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Your current pick will be removed and you can submit a new one. You can only do this
+                    before the pick window closes on{" "}
+                    {pickEnd ? pickEnd.toLocaleString() : endDate.toLocaleDateString()}.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Keep Current Pick</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => deletePick.mutate({ challengeId: challenge.id })}
+                    disabled={deletePick.isPending}
+                  >
+                    {deletePick.isPending ? "Removing..." : "Remove & Re-pick"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           )}
 
           {/* Sprint: admin enrolls all managers */}

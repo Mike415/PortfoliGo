@@ -248,24 +248,26 @@ export default function GroupDashboard() {
         </div>
 
         <Tabs defaultValue="leaderboard">
-          <TabsList className="mb-4">
-            <TabsTrigger value="leaderboard" className="gap-2">
-              <Trophy className="w-3.5 h-3.5" />
-              Leaderboard
-            </TabsTrigger>
-            <TabsTrigger value="chart" className="gap-2">
-              <BarChart2 className="w-3.5 h-3.5" />
-              Performance
-            </TabsTrigger>
-            <TabsTrigger value="my-sleeve" className="gap-2">
-              <Wallet className="w-3.5 h-3.5" />
-              My Sleeve
-            </TabsTrigger>
-            <TabsTrigger value="challenges" className="gap-2">
-              <Swords className="w-3.5 h-3.5" />
-              Challenges
-            </TabsTrigger>
-          </TabsList>
+          <div className="mb-4 overflow-x-auto scrollbar-none -mx-4 px-4">
+            <TabsList className="w-max min-w-full">
+              <TabsTrigger value="leaderboard" className="gap-1.5 text-xs sm:text-sm whitespace-nowrap">
+                <Trophy className="w-3.5 h-3.5 shrink-0" />
+                Leaderboard
+              </TabsTrigger>
+              <TabsTrigger value="chart" className="gap-1.5 text-xs sm:text-sm whitespace-nowrap">
+                <BarChart2 className="w-3.5 h-3.5 shrink-0" />
+                Performance
+              </TabsTrigger>
+              <TabsTrigger value="my-sleeve" className="gap-1.5 text-xs sm:text-sm whitespace-nowrap">
+                <Wallet className="w-3.5 h-3.5 shrink-0" />
+                My Sleeve
+              </TabsTrigger>
+              <TabsTrigger value="challenges" className="gap-1.5 text-xs sm:text-sm whitespace-nowrap">
+                <Swords className="w-3.5 h-3.5 shrink-0" />
+                Challenges
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* LEADERBOARD TAB */}
           <TabsContent value="leaderboard">

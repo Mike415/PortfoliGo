@@ -107,6 +107,15 @@
   }
 }
 
+/* Hide scrollbar on horizontally-scrollable containers (e.g. tab bar on mobile) */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 @layer components {
   /**
    * Custom container utility that centers content and adds responsive padding.

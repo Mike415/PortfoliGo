@@ -137,3 +137,10 @@
 - [ ] DB: isShort flag on positions and trades tables
 - [ ] Backend: short trade logic (sell-to-open increases cash, buy-to-cover reduces cash, P&L inverted)
 - [ ] Frontend: Short toggle in trade form with visual indicator on position rows
+
+## Mobile Fixes (Round 7)
+- [x] Fix: GroupDashboard tab bar clips Challenges tab on mobile — tabs overflow horizontally and the 4th tab is not reachable
+- [x] Conviction pick form: add ticker autocomplete search (same as trade form)
+- [x] Conviction pick form: show live price confirmation before locking in pick
+- [x] Backend: deletePick procedure — allows manager to delete their own pick while liveStatus === 'picking'
+- [x] Frontend: show 'Change Pick' button on myEntry card during pick window (deletes current pick, reopens submit dialog)

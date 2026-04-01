@@ -484,4 +484,44 @@ export const challengesRouter = router({
         ranked: scored.map((s, i) => ({ sleeveId: s.entry.sleeveId, rank: i + 1, returnPct: s.returnPct })),
       };
     }),
+
+  // ── Delete own conviction pick (only allowed during pick window) ─────────────────
+  deletePick: protectedProcedure
+    .input(z.object({ challengeId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const { getDb } = await import("../db");
+      const drizzle = await getDb();
+      if (!drizzle) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+
+      const [challenge] = await drizzle
+        .select()
+        .from(challenges)
+        .where(eq(challenges.id, input.challengeId));
+      if (!challenge) throw new TRPCError({ code: "NOT_FOUND" });
+      await assertGroupMember(challenge.groupId, ctx.user.id);
+
+      if (challenge.type !== "conviction") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Only conviction picks can be deleted" });
+      }
+
+      const now = new Date();
+      const liveStatus = computeChallengeStatus(challenge, now);
+      if (liveStatus !== "picking") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Pick window has closed — picks can no longer be changed" });
+      }
+
+      const sleeve = await db.getSleeveByUserAndGroup(ctx.user.id, challenge.groupId);
+      if (!sleeve) throw new TRPCError({ code: "NOT_FOUND", message: "No sleeve in this group" });
+
+      const deleted = await drizzle
+        .delete(challengeEntries)
+        .where(
+          and(
+            eq(challengeEntries.challengeId, input.challengeId),
+            eq(challengeEntries.sleeveId, sleeve.id)
+          )
+        );
+
+      return { success: true };
+    }),
 });
