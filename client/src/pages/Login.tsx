@@ -38,7 +38,15 @@ export default function Login() {
       setLocation(nextPath);
     },
     onError: (err) => {
-      toast.error(err.message);
+      // tRPC wraps Zod validation errors as a JSON array string — extract the first human message
+      let msg = err.message;
+      try {
+        const parsed = JSON.parse(msg);
+        if (Array.isArray(parsed) && parsed[0]?.message) {
+          msg = parsed[0].message;
+        }
+      } catch { /* not JSON, use as-is */ }
+      toast.error(msg);
     },
   });
 
@@ -152,7 +160,7 @@ export default function Login() {
                         autoComplete="username"
                       />
                     </div>
-                    <p className="text-xs text-muted-foreground">Letters, numbers, underscores, hyphens only</p>
+                    <p className="text-xs text-muted-foreground">Letters, numbers, spaces, underscores, and hyphens</p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="reg-displayname">Display Name (optional)</Label>

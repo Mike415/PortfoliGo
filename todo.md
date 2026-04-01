@@ -234,3 +234,7 @@
 
 ## Portfolio Value History Chart Sort (Round 24)
 - [x] Fix: chart x-axis shows Apr 1 on left and Mar 31 on right — removed erroneous .reverse() call in SleeveManager.tsx chartData
+
+## Username Validation + Error Display (Round 25)
+- [x] Fix: username regex rejects spaces — updated regex to allow spaces, trim on input
+- [x] Fix: raw Zod JSON error shown in create account form — now parses JSON and shows first human-readable message

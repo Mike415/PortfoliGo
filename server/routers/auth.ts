@@ -24,7 +24,9 @@ export const authRouter = router({
   register: publicProcedure
     .input(
       z.object({
-        username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_-]+$/, "Username can only contain letters, numbers, underscores, and hyphens"),
+        username: z.string().min(3).max(32)
+          .transform((v) => v.trim())
+          .pipe(z.string().min(3).max(32).regex(/^[a-zA-Z0-9_ -]+$/, "Username can only contain letters, numbers, spaces, underscores, and hyphens")),
         passcode: z.string().min(4).max(64),
         displayName: z.string().max(64).optional(),
       })
