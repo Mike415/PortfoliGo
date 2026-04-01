@@ -82,6 +82,7 @@ export const portfolioRouter = router({
           unrealizedPnlPct: p.unrealizedPnlPct ? parseFloat(p.unrealizedPnlPct) : 0,
           isShort: p.isShort === 1,
           priceSource: (priceSources[i]?.priceSource ?? "regular") as "regular" | "pre" | "post",
+          companyName: priceSources[i]?.name ?? null,
         })),
       };
     }),
@@ -126,6 +127,7 @@ export const portfolioRouter = router({
           unrealizedPnlPct: p.unrealizedPnlPct ? parseFloat(p.unrealizedPnlPct) : 0,
           isShort: p.isShort === 1,
           priceSource: (priceSources2[i]?.priceSource ?? "regular") as "regular" | "pre" | "post",
+          companyName: priceSources2[i]?.name ?? null,
         })),
       };
     }),

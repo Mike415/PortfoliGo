@@ -439,6 +439,9 @@ function PositionRow({ position, isOwner, onClick }: { position: any; isOwner: b
             </Badge>
           )}
         </div>
+        {position.companyName && (
+          <p className="text-xs text-muted-foreground/70 mt-0.5 truncate" title={position.companyName}>{position.companyName}</p>
+        )}
         <p className="text-xs text-muted-foreground mt-0.5">
           {formatQuantity(position.quantity)} shares · {isShort ? "short @ " : "avg "}{formatCurrency(position.avgCostBasis)}
         </p>

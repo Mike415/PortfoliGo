@@ -241,3 +241,8 @@
 
 ## Wrong Snapshot on View-Only Sleeve (Round 26)
 - [x] Fix: viewing another competitor's sleeve shows the viewer's own chart — getSnapshots now accepts sleeveId param and fetches the correct sleeve's snapshots
+
+## Ticker Company Name on Positions (Round 27)
+- [x] Backend: store shortName/longName from Yahoo Finance quote in price_cache (already done)
+- [x] Backend: return companyName alongside positions in getSleeveById and getSleeve
+- [x] Frontend: show company name below ticker on each position row
