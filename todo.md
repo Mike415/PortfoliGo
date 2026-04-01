@@ -208,3 +208,6 @@
 
 ## Railway Dockerfile Fix Round 2 (Round 17)
 - [x] Fix: Dockerfile missing COPY patches/ before pnpm install — caused ENOENT on wouter@3.7.1.patch
+
+## Railway Deploy Fix Round 3 (Round 18)
+- [x] Fix: Railway overriding Dockerfile CMD with pnpm start — added railway.json to force Dockerfile builder and explicit startCommand
