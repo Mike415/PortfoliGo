@@ -1,0 +1,15 @@
+[phases.setup]
+nixPkgs = ["nodejs_22", "python311", "python311Packages.pip"]
+
+[phases.install]
+cmds = [
+  "npm install -g pnpm",
+  "pnpm install --frozen-lockfile",
+  "pip install -r requirements.txt"
+]
+
+[phases.build]
+cmds = ["pnpm build"]
+
+[start]
+cmd = "python3 server/earnings_service.py & node dist/index.js"

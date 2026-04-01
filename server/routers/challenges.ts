@@ -617,7 +617,7 @@ export const challengesRouter = router({
         // Allow entry without price — will be scored manually
       }
 
-      // Resolve reportDate: use provided value, or auto-fetch from yfinance service
+      // Resolve reportDate: use provided value, or auto-fetch from yfinance service, or use fallback
       let reportDate: string | null = input.reportDate ?? null;
       if (!reportDate) {
         try {
@@ -630,7 +630,11 @@ export const challengesRouter = router({
             reportDate = data.reportDate ?? null;
           }
         } catch {
-          // Service unavailable — continue without date
+          // Service unavailable — try static fallback
+        }
+        if (!reportDate) {
+          const { getFallbackDate } = await import("../earningsFallback");
+          reportDate = getFallbackDate(ticker);
         }
       }
 
@@ -821,19 +825,23 @@ export const challengesRouter = router({
       })
     )
     .query(async ({ input }) => {
+      const { getFallbackCalendar } = await import("../earningsFallback");
       const serviceUrl = process.env.EARNINGS_SERVICE_URL ?? "http://localhost:5001";
       try {
         const res = await fetch(
           `${serviceUrl}/earnings?from=${encodeURIComponent(input.from)}&to=${encodeURIComponent(input.to)}`,
-          { signal: AbortSignal.timeout(10_000) }
+          { signal: AbortSignal.timeout(8_000) }
         );
         if (!res.ok) throw new Error(`Earnings service returned ${res.status}`);
         const data = await res.json() as Array<{ symbol: string; reportDate: string }>;
-        return data;
+        // Merge with fallback: add any fallback entries not returned by the live service
+        const liveSymbols = new Set(data.map((d) => d.symbol));
+        const fallback = getFallbackCalendar(input.from, input.to).filter((f) => !liveSymbols.has(f.symbol));
+        return [...data, ...fallback].sort((a, b) => a.reportDate.localeCompare(b.reportDate));
       } catch (err: any) {
-        console.warn("[earningsCalendar] Service unavailable:", err.message);
-        // Return empty array gracefully — UI will show a fallback message
-        return [] as Array<{ symbol: string; reportDate: string }>;
+        console.warn("[earningsCalendar] Service unavailable, using fallback:", err.message);
+        // Return static fallback calendar so the UI always shows something useful
+        return getFallbackCalendar(input.from, input.to);
       }
     }),
 });

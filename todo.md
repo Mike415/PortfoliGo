@@ -188,3 +188,11 @@
 - [x] Frontend: submitted picks list shows earnings date next to ticker
 - [x] Frontend: competitor leaderboard shows each pick's earnings date
 - [x] Frontend: calendar quick-pick buttons show the date label inline
+
+## Railway Earnings Calendar Fix (Round 14)
+- [x] Add nixpacks.toml to start both Node.js and Python yfinance service on Railway
+- [x] Add requirements.txt with yfinance and flask for Railway Python install
+- [x] Backend: static fallback calendar (earningsFallback.ts) for 60+ major tickers
+- [x] Backend: earningsCalendar procedure merges live data with fallback; uses fallback-only when service unreachable
+- [x] Backend: enterEarningsPick auto-resolves reportDate from fallback if service unavailable
+- [x] Frontend: existing picks show reportDate even when fetched without calendar (auto-fetch on submit)
