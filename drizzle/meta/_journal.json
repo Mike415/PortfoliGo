@@ -36,6 +36,20 @@
       "when": 1775002503706,
       "tag": "0004_next_rage",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1775005463343,
+      "tag": "0005_daily_misty_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1775005797754,
+      "tag": "0006_open_pete_wisdom",
+      "breakpoints": true
     }
   ]
 }

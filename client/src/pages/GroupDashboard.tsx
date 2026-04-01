@@ -38,6 +38,9 @@ const SLEEVE_COLORS = [
 ];
 
 function reallocationLabel(interval: string) {
+  if (interval === "1week") return "Every week";
+  if (interval === "2weeks") return "Every 2 weeks";
+  if (interval === "1month") return "Every month";
   if (interval === "3months") return "Every 3 months";
   if (interval === "6months") return "Every 6 months";
   return "Annually";

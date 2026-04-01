@@ -33,7 +33,7 @@ export const groups = mysqlTable("groups", {
   totalCapital: decimal("totalCapital", { precision: 18, scale: 2 }).notNull().default("1000000.00"),
   sleeveSize: decimal("sleeveSize", { precision: 18, scale: 2 }).notNull().default("200000.00"),
   maxParticipants: int("maxParticipants").notNull().default(5),
-  reallocationInterval: mysqlEnum("reallocationInterval", ["3months", "6months", "12months"]).notNull().default("6months"),
+  reallocationInterval: mysqlEnum("reallocationInterval", ["1week", "2weeks", "1month", "3months", "6months", "12months"]).notNull().default("3months"),
   reallocationPercent: decimal("reallocationPercent", { precision: 5, scale: 2 }).notNull().default("5.00"),
   startDate: timestamp("startDate").defaultNow().notNull(),
   nextReallocationDate: timestamp("nextReallocationDate"),
@@ -186,7 +186,7 @@ export const challenges = mysqlTable("challenges", {
   groupId: int("groupId").notNull(),
   name: varchar("name", { length: 128 }).notNull(),
   description: text("description"),
-  type: mysqlEnum("type", ["conviction", "sprint"]).notNull().default("sprint"),
+  type: mysqlEnum("type", ["conviction", "sprint", "earnings"]).notNull().default("sprint"),
   // conviction: managers pick a ticker before pickWindowEnd, then hold until holdWindowEnd
   // sprint: best sleeve return between startDate and endDate wins
   startDate: timestamp("startDate").notNull(),
@@ -230,6 +230,29 @@ export const challengeEntries = mysqlTable("challenge_entries", {
 
 export type ChallengeEntry = typeof challengeEntries.$inferSelect;
 export type InsertChallengeEntry = typeof challengeEntries.$inferInsert;
+
+// ─── Earnings Picks ─────────────────────────────────────────────────────────────────────────────────
+// One row per (challenge, sleeve, ticker). Managers can add as many picks as they want.
+// direction: 'up' = stock opens higher than prevClose, 'down' = opens lower.
+// result: 'pending' until admin scores, then 'correct' or 'wrong'.
+export const earningsPicks = mysqlTable("earnings_picks", {
+  id: int("id").autoincrement().primaryKey(),
+  challengeId: int("challengeId").notNull(),
+  sleeveId: int("sleeveId").notNull(),
+  userId: int("userId").notNull(),
+  ticker: varchar("ticker", { length: 32 }).notNull(),
+  assetName: varchar("assetName", { length: 128 }),
+  direction: mysqlEnum("direction", ["up", "down"]).notNull(),
+  prevClose: decimal("prevClose", { precision: 18, scale: 6 }),   // price at pick time (pre-earnings close)
+  openPrice: decimal("openPrice", { precision: 18, scale: 6 }),   // next-open price fetched at scoring
+  result: mysqlEnum("result", ["pending", "correct", "wrong"]).notNull().default("pending"),
+  points: int("points").notNull().default(0),                     // +1 correct, -1 wrong
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  scoredAt: timestamp("scoredAt"),
+});
+
+export type EarningsPick = typeof earningsPicks.$inferSelect;
+export type InsertEarningsPick = typeof earningsPicks.$inferInsert;
 
 // ─── Sessions ─────────────────────────────────────────────────────────────────
 export const sessions = mysqlTable("sessions", {

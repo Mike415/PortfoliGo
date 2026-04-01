@@ -4,6 +4,22 @@ import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import { z } from "zod";
 
+// ─── Helper: advance a date by a reallocation interval ──────────────────────
+type ReallocationInterval = "1week" | "2weeks" | "1month" | "3months" | "6months" | "12months";
+
+function addReallocationInterval(from: Date, interval: ReallocationInterval): Date {
+  const d = new Date(from);
+  switch (interval) {
+    case "1week":   d.setDate(d.getDate() + 7);           break;
+    case "2weeks":  d.setDate(d.getDate() + 14);          break;
+    case "1month":  d.setMonth(d.getMonth() + 1);         break;
+    case "3months": d.setMonth(d.getMonth() + 3);         break;
+    case "6months": d.setMonth(d.getMonth() + 6);         break;
+    case "12months":d.setFullYear(d.getFullYear() + 1);   break;
+  }
+  return d;
+}
+
 export const groupRouter = router({
   // Public: preview group info by invite code (no auth required — for invite link landing page)
   preview: publicProcedure
@@ -35,7 +51,7 @@ export const groupRouter = router({
         description: z.string().max(500).optional(),
         totalCapital: z.number().positive().default(1000000),
         maxParticipants: z.number().int().min(2).max(20).default(5),
-        reallocationInterval: z.enum(["3months", "6months", "12months"]).default("6months"),
+        reallocationInterval: z.enum(["1week", "2weeks", "1month", "3months", "6months", "12months"]).default("3months"),
         reallocationPercent: z.number().min(1).max(50).default(5),
       })
     )
@@ -45,14 +61,7 @@ export const groupRouter = router({
       const startDate = new Date();
 
       // Calculate next reallocation date
-      const nextReallocationDate = new Date(startDate);
-      if (input.reallocationInterval === "3months") {
-        nextReallocationDate.setMonth(nextReallocationDate.getMonth() + 3);
-      } else if (input.reallocationInterval === "6months") {
-        nextReallocationDate.setMonth(nextReallocationDate.getMonth() + 6);
-      } else {
-        nextReallocationDate.setFullYear(nextReallocationDate.getFullYear() + 1);
-      }
+      const nextReallocationDate = addReallocationInterval(new Date(startDate), input.reallocationInterval);
 
       const group = await db.createGroup({
         name: input.name,
@@ -189,7 +198,7 @@ export const groupRouter = router({
         groupId: z.number(),
         name: z.string().min(1).max(128).optional(),
         description: z.string().max(500).optional(),
-        reallocationInterval: z.enum(["3months", "6months", "12months"]).optional(),
+        reallocationInterval: z.enum(["1week", "2weeks", "1month", "3months", "6months", "12months"]).optional(),
         reallocationPercent: z.number().min(1).max(50).optional(),
         status: z.enum(["active", "paused", "completed"]).optional(),
       })

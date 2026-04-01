@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
 import * as db from "../db";
-import { challenges, challengeEntries } from "../../drizzle/schema";
+import { challenges, challengeEntries, earningsPicks } from "../../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 import { getQuote } from "../yahooFinance";
 
@@ -30,7 +30,8 @@ function computeChallengeStatus(
   const end = new Date(c.endDate);
   const pickEnd = c.pickWindowEnd ? new Date(c.pickWindowEnd) : null;
   if (now < start) return "upcoming";
-  if (c.type === "conviction" && pickEnd && now < pickEnd) return "picking";
+  // Both conviction and earnings have a pick window
+  if ((c.type === "conviction" || c.type === "earnings") && pickEnd && now < pickEnd) return "picking";
   if (now < end) return "active";
   return "scoring"; // scoring until admin marks completed
 }
@@ -112,7 +113,37 @@ export const challengesRouter = router({
             return 0;
           });
 
-          return { ...c, liveStatus, picksHidden, myEntry, entries: enrichedEntries, entryCount: allEntries.length };
+          // Earnings: load all picks for this challenge
+          let myEarningsPicks: typeof earningsPicks.$inferSelect[] = [];
+          type EarningsPickPublic = Omit<typeof earningsPicks.$inferSelect, 'ticker' | 'direction'> & {
+            ticker: string | null;
+            direction: "up" | "down" | null;
+            displayName: string;
+            isMe: boolean;
+          };
+          let allEarningsPicks: EarningsPickPublic[] = [];
+          if (c.type === "earnings") {
+            const allEP = await drizzle
+              .select()
+              .from(earningsPicks)
+              .where(eq(earningsPicks.challengeId, c.id));
+            myEarningsPicks = allEP.filter((p) => p.userId === ctx.user.id);
+            allEarningsPicks = await Promise.all(
+              allEP.map(async (p) => {
+                const pu = await db.getUserById(p.userId);
+                return {
+                  ...p,
+                  displayName: pu?.displayName || pu?.username || "Unknown",
+                  isMe: p.userId === ctx.user.id,
+                  // Hide other managers' picks during pick window
+                  ticker: picksHidden && p.userId !== ctx.user.id ? null : p.ticker,
+                  direction: picksHidden && p.userId !== ctx.user.id ? null : p.direction,
+                };
+              })
+            );
+          }
+
+          return { ...c, liveStatus, picksHidden, myEntry, entries: enrichedEntries, entryCount: allEntries.length, myEarningsPicks, allEarningsPicks };
         })
       );
     }),
@@ -163,7 +194,7 @@ export const challengesRouter = router({
         groupId: z.number(),
         name: z.string().min(1).max(128),
         description: z.string().optional(),
-        type: z.enum(["conviction", "sprint"]),
+        type: z.enum(["conviction", "sprint", "earnings"]),
         startDate: z.string(), // ISO string
         pickWindowEnd: z.string().optional(), // conviction only
         endDate: z.string(),
@@ -183,8 +214,8 @@ export const challengesRouter = router({
       if (end <= start) throw new TRPCError({ code: "BAD_REQUEST", message: "End date must be after start date" });
 
       let pickWindowEnd: Date | null = null;
-      if (input.type === "conviction") {
-        if (!input.pickWindowEnd) throw new TRPCError({ code: "BAD_REQUEST", message: "Conviction challenges require a pick window end date" });
+      if (input.type === "conviction" || input.type === "earnings") {
+        if (!input.pickWindowEnd) throw new TRPCError({ code: "BAD_REQUEST", message: "Conviction and earnings challenges require a pick window end date" });
         pickWindowEnd = new Date(input.pickWindowEnd);
         if (pickWindowEnd <= start || pickWindowEnd >= end) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Pick window end must be between start and end dates" });
@@ -224,6 +255,7 @@ export const challengesRouter = router({
       await assertGroupAdmin(challenge.groupId, ctx.user.id);
 
       await drizzle.delete(challengeEntries).where(eq(challengeEntries.challengeId, input.challengeId));
+      await drizzle.delete(earningsPicks).where(eq(earningsPicks.challengeId, input.challengeId));
       await drizzle.delete(challenges).where(eq(challenges.id, input.challengeId));
       return { success: true };
     }),
@@ -513,7 +545,7 @@ export const challengesRouter = router({
       const sleeve = await db.getSleeveByUserAndGroup(ctx.user.id, challenge.groupId);
       if (!sleeve) throw new TRPCError({ code: "NOT_FOUND", message: "No sleeve in this group" });
 
-      const deleted = await drizzle
+      await drizzle
         .delete(challengeEntries)
         .where(
           and(
@@ -523,5 +555,240 @@ export const challengesRouter = router({
         );
 
       return { success: true };
+    }),
+
+  // ── Enter an earnings pick (add one ticker + direction) ───────────────────
+  // Managers can call this multiple times to add multiple picks
+  enterEarningsPick: protectedProcedure
+    .input(
+      z.object({
+        challengeId: z.number(),
+        ticker: z.string().min(1).max(32),
+        assetName: z.string().optional(),
+        direction: z.enum(["up", "down"]),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { getDb } = await import("../db");
+      const drizzle = await getDb();
+      if (!drizzle) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+
+      const [challenge] = await drizzle.select().from(challenges).where(eq(challenges.id, input.challengeId));
+      if (!challenge) throw new TRPCError({ code: "NOT_FOUND" });
+      await assertGroupMember(challenge.groupId, ctx.user.id);
+
+      if (challenge.type !== "earnings") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This is not an earnings challenge" });
+      }
+
+      const now = new Date();
+      const liveStatus = computeChallengeStatus(challenge, now);
+      if (liveStatus !== "picking") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Pick window is not open" });
+      }
+
+      const sleeve = await db.getSleeveByUserAndGroup(ctx.user.id, challenge.groupId);
+      if (!sleeve) throw new TRPCError({ code: "NOT_FOUND", message: "No sleeve in this group" });
+
+      const ticker = input.ticker.toUpperCase();
+
+      // Check for duplicate ticker by this user in this challenge
+      const existing = await drizzle
+        .select()
+        .from(earningsPicks)
+        .where(
+          and(
+            eq(earningsPicks.challengeId, input.challengeId),
+            eq(earningsPicks.sleeveId, sleeve.id),
+            eq(earningsPicks.ticker, ticker)
+          )
+        );
+      if (existing.length > 0) {
+        throw new TRPCError({ code: "CONFLICT", message: `You already have a pick for ${ticker}. Delete it first to change direction.` });
+      }
+
+      // Fetch current price as prevClose (pre-earnings reference price)
+      let prevClose: number | null = null;
+      try {
+        const quote = await getQuote(ticker);
+        prevClose = quote?.price ?? null;
+      } catch {
+        // Allow entry without price — will be scored manually
+      }
+
+      await drizzle.insert(earningsPicks).values({
+        challengeId: input.challengeId,
+        sleeveId: sleeve.id,
+        userId: ctx.user.id,
+        ticker,
+        assetName: input.assetName ?? ticker,
+        direction: input.direction,
+        prevClose: prevClose !== null ? String(prevClose) : null,
+        openPrice: null,
+        result: "pending",
+        points: 0,
+      });
+
+      return { success: true, ticker, direction: input.direction, prevClose };
+    }),
+
+  // ── Delete one earnings pick (only during pick window) ────────────────────
+  deleteEarningsPick: protectedProcedure
+    .input(z.object({ pickId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const { getDb } = await import("../db");
+      const drizzle = await getDb();
+      if (!drizzle) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+
+      const [pick] = await drizzle.select().from(earningsPicks).where(eq(earningsPicks.id, input.pickId));
+      if (!pick) throw new TRPCError({ code: "NOT_FOUND" });
+      if (pick.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN", message: "Not your pick" });
+
+      const [challenge] = await drizzle.select().from(challenges).where(eq(challenges.id, pick.challengeId));
+      if (!challenge) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const now = new Date();
+      const liveStatus = computeChallengeStatus(challenge, now);
+      if (liveStatus !== "picking") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Pick window has closed — picks can no longer be changed" });
+      }
+
+      await drizzle.delete(earningsPicks).where(eq(earningsPicks.id, input.pickId));
+      return { success: true };
+    }),
+
+  // ── Score an earnings challenge (admin only) ──────────────────────────────
+  // Fetches the current price as the "next open" for each pick, compares to prevClose,
+  // awards +1 if direction was correct, -1 if wrong. Ranks by total points.
+  scoreEarnings: protectedProcedure
+    .input(z.object({ challengeId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const { getDb } = await import("../db");
+      const drizzle = await getDb();
+      if (!drizzle) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+
+      const [challenge] = await drizzle.select().from(challenges).where(eq(challenges.id, input.challengeId));
+      if (!challenge) throw new TRPCError({ code: "NOT_FOUND" });
+      await assertGroupAdmin(challenge.groupId, ctx.user.id);
+
+      if (challenge.type !== "earnings") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Use the score procedure for conviction/sprint challenges" });
+      }
+
+      const picks = await drizzle
+        .select()
+        .from(earningsPicks)
+        .where(eq(earningsPicks.challengeId, input.challengeId));
+
+      if (picks.length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No picks to score" });
+      }
+
+      const now = new Date();
+
+      // Score each pick
+      for (const pick of picks) {
+        let openPrice: number | null = null;
+        try {
+          const quote = await getQuote(pick.ticker);
+          openPrice = quote?.price ?? null;
+        } catch {
+          // Skip if price unavailable
+        }
+
+        if (openPrice === null || pick.prevClose === null) {
+          // Can't score without prices — leave as pending
+          continue;
+        }
+
+        const prevClose = parseFloat(pick.prevClose);
+        const movedUp = openPrice > prevClose;
+        const correct = (pick.direction === "up" && movedUp) || (pick.direction === "down" && !movedUp);
+        const result: "correct" | "wrong" = correct ? "correct" : "wrong";
+        const points = correct ? 1 : -1;
+
+        await drizzle
+          .update(earningsPicks)
+          .set({ openPrice: String(openPrice), result, points, scoredAt: now })
+          .where(eq(earningsPicks.id, pick.id));
+      }
+
+      // Aggregate points per sleeve
+      const scoredPicks = await drizzle
+        .select()
+        .from(earningsPicks)
+        .where(eq(earningsPicks.challengeId, input.challengeId));
+
+      const pointsByUser = new Map<number, { sleeveId: number; userId: number; totalPoints: number }>();
+      for (const p of scoredPicks) {
+        if (!pointsByUser.has(p.userId)) {
+          pointsByUser.set(p.userId, { sleeveId: p.sleeveId, userId: p.userId, totalPoints: 0 });
+        }
+        pointsByUser.get(p.userId)!.totalPoints += p.points;
+      }
+
+      const ranked = Array.from(pointsByUser.values()).sort((a, b) => b.totalPoints - a.totalPoints);
+
+      // Upsert a challengeEntry per participant to track rank/winner (reuses existing entries table)
+      for (let i = 0; i < ranked.length; i++) {
+        const { sleeveId, userId, totalPoints } = ranked[i];
+        const isWinner = i === 0 ? 1 : 0;
+        const existing = await drizzle
+          .select()
+          .from(challengeEntries)
+          .where(and(eq(challengeEntries.challengeId, input.challengeId), eq(challengeEntries.sleeveId, sleeveId)));
+
+        if (existing.length > 0) {
+          await drizzle
+            .update(challengeEntries)
+            .set({ returnPct: String(totalPoints), rank: i + 1, isWinner, scoredAt: now })
+            .where(eq(challengeEntries.id, existing[0].id));
+        } else {
+          await drizzle.insert(challengeEntries).values({
+            challengeId: input.challengeId,
+            sleeveId,
+            userId,
+            ticker: null,
+            assetName: null,
+            entryPrice: null,
+            startValue: null,
+            endValue: null,
+            returnPct: String(totalPoints),
+            rank: i + 1,
+            isWinner,
+            scoredAt: now,
+          });
+        }
+      }
+
+      const winner = ranked[0];
+      const bump = parseFloat(challenge.allocationBump);
+
+      // Award allocation bump to winner
+      if (winner && bump > 0) {
+        const winnerSleeve = await db.getSleeveById(winner.sleeveId);
+        if (winnerSleeve) {
+          const newAlloc = parseFloat(winnerSleeve.allocatedCapital) + bump;
+          const newCash = parseFloat(winnerSleeve.cashBalance) + bump;
+          const newTotal = parseFloat(winnerSleeve.totalValue) + bump;
+          await db.updateSleeve(winnerSleeve.id, {
+            allocatedCapital: String(newAlloc),
+            cashBalance: String(newCash),
+            totalValue: String(newTotal),
+          });
+        }
+      }
+
+      // Mark challenge as completed
+      await drizzle
+        .update(challenges)
+        .set({ status: "completed", winnerId: winner?.sleeveId ?? null })
+        .where(eq(challenges.id, input.challengeId));
+
+      return {
+        success: true,
+        ranked: ranked.map((r, i) => ({ sleeveId: r.sleeveId, rank: i + 1, totalPoints: r.totalPoints })),
+        winner: winner ? { sleeveId: winner.sleeveId, totalPoints: winner.totalPoints, bump } : null,
+      };
     }),
 });

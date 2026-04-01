@@ -158,13 +158,13 @@ export const adminRouter = router({
       // Update group's last/next reallocation dates
       const now = new Date();
       const nextDate = new Date(now);
-      if (group.reallocationInterval === "3months") {
-        nextDate.setMonth(nextDate.getMonth() + 3);
-      } else if (group.reallocationInterval === "6months") {
-        nextDate.setMonth(nextDate.getMonth() + 6);
-      } else {
-        // 12months / yearly
-        nextDate.setFullYear(nextDate.getFullYear() + 1);
+      switch (group.reallocationInterval) {
+        case "1week":    nextDate.setDate(nextDate.getDate() + 7);          break;
+        case "2weeks":   nextDate.setDate(nextDate.getDate() + 14);         break;
+        case "1month":   nextDate.setMonth(nextDate.getMonth() + 1);        break;
+        case "3months":  nextDate.setMonth(nextDate.getMonth() + 3);        break;
+        case "6months":  nextDate.setMonth(nextDate.getMonth() + 6);        break;
+        default:         nextDate.setFullYear(nextDate.getFullYear() + 1);  break; // 12months
       }
 
       await db.updateGroup(input.groupId, {

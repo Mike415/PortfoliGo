@@ -144,3 +144,20 @@
 - [x] Conviction pick form: show live price confirmation before locking in pick
 - [x] Backend: deletePick procedure — allows manager to delete their own pick while liveStatus === 'picking'
 - [x] Frontend: show 'Change Pick' button on myEntry card during pick window (deletes current pick, reopens submit dialog)
+
+## Earnings Play Competition (Round 8)
+- [ ] Schema: earningsPicks table (challengeId, sleeveId, userId, ticker, direction up/down, prevClose, openPrice, result correct/wrong/pending, points)
+- [ ] Schema: challenges.type enum extended to include 'earnings'
+- [ ] Backend: enterEarningsPick — add/update a pick (ticker + direction) during pick window
+- [ ] Backend: deleteEarningsPick — remove a single pick during pick window
+- [ ] Backend: scoreEarnings — fetch open price for each pick, compare to prevClose, assign +1/-1, rank by total points, award bump
+- [ ] Backend: list procedure returns earningsPicks per challenge
+- [ ] Frontend: EarningsCard — ticker search + Up/Down toggle, pick list with edit/delete, submit button
+- [ ] Frontend: Leaderboard shows each manager's picks + points during active/scoring/completed
+- [ ] Frontend: CreateChallengeDialog — add Earnings Play type option
+
+## Reallocation Intervals (Round 9)
+- [x] Schema: extend reallocationInterval enum to include '1week', '2weeks', '1month' alongside existing '3months', '6months', '12months'
+- [x] Backend: update nextReallocationDate calculation to handle new intervals
+- [x] Frontend: update group creation form to show all 6 interval options
+- [x] Frontend: update group settings to show all 6 interval options

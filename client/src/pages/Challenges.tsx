@@ -49,6 +49,9 @@ import {
   Search,
   RefreshCw,
   RotateCcw,
+  TrendingUp,
+  TrendingDown,
+  BarChart2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -74,11 +77,29 @@ interface EntryRow {
   enteredAt: Date | string | null;
 }
 
+interface EarningsPickRow {
+  id: number;
+  challengeId: number;
+  sleeveId: number;
+  userId: number;
+  ticker: string | null;
+  assetName: string | null;
+  direction: "up" | "down" | null;
+  prevClose: string | null;
+  openPrice: string | null;
+  result: "pending" | "correct" | "wrong";
+  points: number;
+  displayName: string;
+  isMe: boolean;
+  createdAt: Date | string;
+  scoredAt: Date | string | null;
+}
+
 interface ChallengeListItem {
   id: number;
   name: string;
   description: string | null;
-  type: "conviction" | "sprint";
+  type: "conviction" | "sprint" | "earnings";
   startDate: Date | string;
   pickWindowEnd: Date | string | null;
   endDate: Date | string;
@@ -91,6 +112,8 @@ interface ChallengeListItem {
   myEntry: null | EntryRow;
   entries: EntryRow[];
   entryCount: number;
+  myEarningsPicks: EarningsPickRow[];
+  allEarningsPicks: EarningsPickRow[];
 }
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
@@ -1012,7 +1035,7 @@ export default function Challenges() {
           {active.map((c) => (
             <ChallengeCard
               key={c.id}
-              challenge={c as ChallengeListItem}
+              challenge={c as unknown as ChallengeListItem}
               isAdmin={!!isAdmin}
               groupId={gid}
               onRefresh={() => refetch()}
@@ -1030,7 +1053,7 @@ export default function Challenges() {
           {upcoming.map((c) => (
             <ChallengeCard
               key={c.id}
-              challenge={c as ChallengeListItem}
+              challenge={c as unknown as ChallengeListItem}
               isAdmin={!!isAdmin}
               groupId={gid}
               onRefresh={() => refetch()}
@@ -1048,7 +1071,7 @@ export default function Challenges() {
           {completed.map((c) => (
             <ChallengeCard
               key={c.id}
-              challenge={c as ChallengeListItem}
+              challenge={c as unknown as ChallengeListItem}
               isAdmin={!!isAdmin}
               groupId={gid}
               onRefresh={() => refetch()}

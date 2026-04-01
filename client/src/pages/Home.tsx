@@ -179,7 +179,13 @@ function GroupCard({ group, userId, onOpen }: { group: any; userId: number; onOp
           </div>
           <div>
             <p className="text-muted-foreground">Reallocation</p>
-            <p className="font-medium">{group.reallocationInterval === "3months" ? "Every 3mo" : group.reallocationInterval === "6months" ? "Every 6mo" : "Annually"}</p>
+            <p className="font-medium">{
+              group.reallocationInterval === "1week" ? "Every week" :
+              group.reallocationInterval === "2weeks" ? "Every 2 weeks" :
+              group.reallocationInterval === "1month" ? "Every month" :
+              group.reallocationInterval === "3months" ? "Every 3mo" :
+              group.reallocationInterval === "6months" ? "Every 6mo" : "Annually"
+            }</p>
           </div>
         </div>
       </CardContent>
