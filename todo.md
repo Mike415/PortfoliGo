@@ -231,3 +231,6 @@
 - [x] Frontend: show PRE/AH chip on sleeve header Total Value card when any position uses extended hours price
 - [x] Backend: 9:35am ET cron to auto-score earnings picks at open price (day after earnings date)
 - [x] Backend: store settlement price on earnings_picks when auto-scored
+
+## Portfolio Value History Chart Sort (Round 24)
+- [x] Fix: chart x-axis shows Apr 1 on left and Mar 31 on right — removed erroneous .reverse() call in SleeveManager.tsx chartData

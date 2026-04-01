@@ -126,7 +126,7 @@ export default function SleeveManager() {
 
   // Prepare chart data
   const chartData = snapshots && snapshots.length > 0
-    ? [...snapshots].reverse().map((s) => ({
+    ? snapshots.map((s) => ({
         date: new Date(s.snapshotAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
         totalValue: parseFloat(String(s.totalValue)),
       }))
