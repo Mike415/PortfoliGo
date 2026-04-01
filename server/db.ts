@@ -321,14 +321,15 @@ export async function upsertPriceCache(
   price: string,
   change: string | null,
   changePct: string | null,
-  name: string | null
+  name: string | null,
+  priceSourceVal: "regular" | "pre" | "post" = "regular"
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db
     .insert(priceCache)
-    .values({ ticker, assetType, price, change, changePct, name })
-    .onDuplicateKeyUpdate({ set: { price, change, changePct, name, updatedAt: new Date() } });
+    .values({ ticker, assetType, price, change, changePct, name, priceSource: priceSourceVal })
+    .onDuplicateKeyUpdate({ set: { price, change, changePct, name, priceSource: priceSourceVal, updatedAt: new Date() } });
 }
 
 // ─── Reallocation ─────────────────────────────────────────────────────────────

@@ -1,0 +1,1 @@
+ALTER TABLE `price_cache` ADD `priceSource` enum('regular','pre','post') DEFAULT 'regular' NOT NULL;

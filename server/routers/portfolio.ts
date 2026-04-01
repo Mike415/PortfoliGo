@@ -4,19 +4,24 @@ import * as db from "../db";
 import { z } from "zod";
 import { getQuote, type AssetType } from "../yahooFinance";
 
-async function fetchPrice(ticker: string, forceRefresh = false): Promise<{ price: number; assetType: AssetType; name: string | null }> {
+async function fetchPrice(ticker: string, forceRefresh = false): Promise<{ price: number; assetType: AssetType; name: string | null; priceSource: "regular" | "pre" | "post" }> {
   const CACHE_TTL = 5 * 60 * 1000;
 
   if (!forceRefresh) {
     const cached = await db.getPriceCacheEntry(ticker);
     if (cached && Date.now() - cached.updatedAt.getTime() < CACHE_TTL) {
-      return { price: parseFloat(cached.price), assetType: cached.assetType as AssetType, name: cached.name };
+      return {
+        price: parseFloat(cached.price),
+        assetType: cached.assetType as AssetType,
+        name: cached.name,
+        priceSource: (cached.priceSource ?? "regular") as "regular" | "pre" | "post",
+      };
     }
   }
 
   const q = await getQuote(ticker);
-  await db.upsertPriceCache(ticker, q.assetType, String(q.price), String(q.change), String(q.changePct), q.name);
-  return { price: q.price, assetType: q.assetType, name: q.name };
+  await db.upsertPriceCache(ticker, q.assetType, String(q.price), String(q.change), String(q.changePct), q.name, q.priceSource);
+  return { price: q.price, assetType: q.assetType, name: q.name, priceSource: q.priceSource };
 }
 
 /** Save a snapshot of sleeve state (called after every price refresh) */
@@ -53,6 +58,10 @@ export const portfolioRouter = router({
       if (!sleeve) throw new TRPCError({ code: "NOT_FOUND", message: "Sleeve not found" });
 
       const positions = await db.getPositionsForSleeve(sleeve.id);
+      // Fetch price source from cache for each position
+      const priceSources = await Promise.all(
+        positions.map((p) => db.getPriceCacheEntry(p.ticker))
+      );
 
       return {
         ...sleeve,
@@ -63,7 +72,7 @@ export const portfolioRouter = router({
         realizedPnl: parseFloat(sleeve.realizedPnl),
         unrealizedPnl: parseFloat(sleeve.unrealizedPnl),
         returnPct: parseFloat(sleeve.returnPct),
-        positions: positions.map((p) => ({
+        positions: positions.map((p, i) => ({
           ...p,
           quantity: parseFloat(p.quantity),
           avgCostBasis: parseFloat(p.avgCostBasis),
@@ -72,6 +81,7 @@ export const portfolioRouter = router({
           unrealizedPnl: p.unrealizedPnl ? parseFloat(p.unrealizedPnl) : 0,
           unrealizedPnlPct: p.unrealizedPnlPct ? parseFloat(p.unrealizedPnlPct) : 0,
           isShort: p.isShort === 1,
+          priceSource: (priceSources[i]?.priceSource ?? "regular") as "regular" | "pre" | "post",
         })),
       };
     }),
@@ -91,6 +101,9 @@ export const portfolioRouter = router({
       const owner = await db.getUserById(sleeve.userId);
       const positions = await db.getPositionsForSleeve(sleeve.id);
       const isOwner = sleeve.userId === ctx.user.id;
+      const priceSources2 = await Promise.all(
+        positions.map((p) => db.getPriceCacheEntry(p.ticker))
+      );
 
       return {
         ...sleeve,
@@ -103,7 +116,7 @@ export const portfolioRouter = router({
         returnPct: parseFloat(sleeve.returnPct),
         isOwner,
         ownerDisplayName: owner?.displayName || owner?.username || "Unknown",
-        positions: positions.map((p) => ({
+        positions: positions.map((p, i) => ({
           ...p,
           quantity: parseFloat(p.quantity),
           avgCostBasis: parseFloat(p.avgCostBasis),
@@ -112,6 +125,7 @@ export const portfolioRouter = router({
           unrealizedPnl: p.unrealizedPnl ? parseFloat(p.unrealizedPnl) : 0,
           unrealizedPnlPct: p.unrealizedPnlPct ? parseFloat(p.unrealizedPnlPct) : 0,
           isShort: p.isShort === 1,
+          priceSource: (priceSources2[i]?.priceSource ?? "regular") as "regular" | "pre" | "post",
         })),
       };
     }),
@@ -204,11 +218,11 @@ export const portfolioRouter = router({
       if (positions.length === 0) return { success: true, updated: 0 };
 
       // Fetch prices sequentially to avoid race conditions on the accumulator
-      const priceResults: { posId: number; currentValue: number; unrealizedPnl: number }[] = [];
+      const priceResults: { posId: number; currentValue: number; unrealizedPnl: number; priceSource: "regular" | "pre" | "post" }[] = [];
 
       for (const pos of positions) {
         try {
-          const { price } = await fetchPrice(pos.ticker, true);
+          const { price, priceSource } = await fetchPrice(pos.ticker, true);
           const qty = parseFloat(pos.quantity);
           const avgCost = parseFloat(pos.avgCostBasis);
           const isShort = pos.isShort === 1;
@@ -236,7 +250,7 @@ export const portfolioRouter = router({
             lastPricedAt: new Date(),
           });
 
-          priceResults.push({ posId: pos.id, currentValue, unrealizedPnl });
+          priceResults.push({ posId: pos.id, currentValue, unrealizedPnl, priceSource });
         } catch (err) {
           console.error(`[Portfolio] Failed to refresh price for ${pos.ticker}:`, err);
           const isShortFallback = pos.isShort === 1;
@@ -244,7 +258,7 @@ export const portfolioRouter = router({
           const rawLastValue = pos.currentValue ? parseFloat(pos.currentValue) : 0;
           const lastValue = isShortFallback ? -Math.abs(rawLastValue) : Math.abs(rawLastValue);
           const lastPnl = pos.unrealizedPnl ? parseFloat(pos.unrealizedPnl) : 0;
-          priceResults.push({ posId: pos.id, currentValue: lastValue, unrealizedPnl: lastPnl });
+          priceResults.push({ posId: pos.id, currentValue: lastValue, unrealizedPnl: lastPnl, priceSource: "regular" });
         }
       }
 
@@ -273,7 +287,13 @@ export const portfolioRouter = router({
         returnPct: String(returnPct),
       });
 
-      return { success: true, updated: positions.length, totalValue, returnPct };
+      // Determine overall market state: if any position used extended hours, surface it
+      const hasExtended = priceResults.some((r) => r.priceSource !== "regular");
+      const dominantSource = priceResults.find((r) => r.priceSource === "post")?.priceSource
+        ?? priceResults.find((r) => r.priceSource === "pre")?.priceSource
+        ?? "regular";
+
+      return { success: true, updated: positions.length, totalValue, returnPct, hasExtended, dominantSource };
     }),
 
   // Add a trade (buy, sell, short, or cover)

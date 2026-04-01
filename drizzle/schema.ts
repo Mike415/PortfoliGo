@@ -159,6 +159,7 @@ export const priceCache = mysqlTable("price_cache", {
   change: decimal("change", { precision: 18, scale: 6 }),
   changePct: decimal("changePct", { precision: 10, scale: 4 }),
   name: varchar("name", { length: 256 }),
+  priceSource: mysqlEnum("priceSource", ["regular", "pre", "post"]).notNull().default("regular"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 

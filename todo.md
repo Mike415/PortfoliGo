@@ -221,3 +221,8 @@
 
 ## Short Position Bug Fix Round 2 (Round 21)
 - [x] Fix: portfolio value still shows too high after short open — stale fallback path in all 3 refresh locations was reading raw DB value without sign correction
+
+## Extended Hours Pricing (Round 22)
+- [x] Backend: use preMarketPrice / postMarketPrice from Yahoo Finance when market is closed
+- [x] Backend: return marketState and priceSource (regular/pre/post) alongside price
+- [x] Frontend: show "PRE" or "AH" badge on position rows and price cards when using extended hours price

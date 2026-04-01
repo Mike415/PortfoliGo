@@ -29,15 +29,21 @@ const http: AxiosInstance = axios.create({
 
 export type AssetType = "stock" | "etf" | "crypto";
 
+export type MarketState = "REGULAR" | "PRE" | "POST" | "CLOSED" | "PREPRE" | "POSTPOST";
+export type PriceSource = "regular" | "pre" | "post";
+
 export interface QuoteResult {
   ticker: string;
-  price: number;
+  price: number;           // Best available price (extended hours if fresher)
+  regularPrice: number;   // Last regular session close
   previousClose: number;
   change: number;
   changePct: number;
   name: string | null;
   assetType: AssetType;
   currency: string | null;
+  marketState: MarketState;
+  priceSource: PriceSource; // Which price is being used
 }
 
 export interface SearchResult {
@@ -132,20 +138,52 @@ export async function getQuote(ticker: string): Promise<QuoteResult> {
   }
 
   const meta = chartResult.meta ?? {};
-  const price: number = meta.regularMarketPrice ?? meta.chartPreviousClose ?? 0;
-  const previousClose: number = meta.chartPreviousClose ?? meta.previousClose ?? price;
+  const regularPrice: number = meta.regularMarketPrice ?? meta.chartPreviousClose ?? 0;
+  const previousClose: number = meta.chartPreviousClose ?? meta.previousClose ?? regularPrice;
+  const marketState: MarketState = (meta.marketState as MarketState) ?? "CLOSED";
+
+  // Use the most recent extended hours price when it exists and is valid.
+  // Yahoo Finance returns preMarketPrice / postMarketPrice alongside the regular price.
+  const preMarketPrice: number | undefined = meta.preMarketPrice;
+  const postMarketPrice: number | undefined = meta.postMarketPrice;
+
+  let price = regularPrice;
+  let priceSource: PriceSource = "regular";
+
+  if (marketState === "PRE" || marketState === "PREPRE") {
+    // Before market open — use pre-market price if available
+    if (preMarketPrice && preMarketPrice > 0) {
+      price = preMarketPrice;
+      priceSource = "pre";
+    }
+  } else if (marketState === "POST" || marketState === "POSTPOST" || marketState === "CLOSED") {
+    // After market close — prefer post-market price if available and more recent
+    if (postMarketPrice && postMarketPrice > 0) {
+      price = postMarketPrice;
+      priceSource = "post";
+    } else if (preMarketPrice && preMarketPrice > 0 && marketState === "CLOSED") {
+      // Edge case: only pre-market data available (very early morning)
+      price = preMarketPrice;
+      priceSource = "pre";
+    }
+  }
+  // marketState === "REGULAR": use regularPrice as-is (priceSource stays "regular")
+
   const change = price - previousClose;
   const changePct = previousClose !== 0 ? (change / previousClose) * 100 : 0;
 
   return {
     ticker: ticker.toUpperCase(),
     price,
+    regularPrice,
     previousClose,
     change,
     changePct,
     name: meta.longName || meta.shortName || null,
     assetType: mapInstrumentType(meta.instrumentType, ticker),
     currency: meta.currency || null,
+    marketState,
+    priceSource,
   };
 }
 

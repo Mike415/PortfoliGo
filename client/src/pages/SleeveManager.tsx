@@ -380,6 +380,8 @@ export default function SleeveManager() {
 function PositionRow({ position, isOwner, onClick }: { position: any; isOwner: boolean; onClick: () => void }) {
   const assetBadgeClass = ASSET_BADGE[position.assetType as AssetType] || "";
   const isShort = position.isShort;
+  const priceSource = position.priceSource as "regular" | "pre" | "post" | undefined;
+  const isExtended = priceSource === "pre" || priceSource === "post";
 
   return (
     <div
@@ -402,6 +404,19 @@ function PositionRow({ position, isOwner, onClick }: { position: any; isOwner: b
               SHORT
             </Badge>
           )}
+          {isExtended && (
+            <Badge
+              variant="outline"
+              className={`text-xs gap-1 ${
+                priceSource === "pre"
+                  ? "text-sky-400 bg-sky-400/10 border-sky-400/20"
+                  : "text-violet-400 bg-violet-400/10 border-violet-400/20"
+              }`}
+              title={priceSource === "pre" ? "Pre-market price" : "After-hours price"}
+            >
+              {priceSource === "pre" ? "PRE" : "AH"}
+            </Badge>
+          )}
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">
           {formatQuantity(position.quantity)} shares · {isShort ? "short @ " : "avg "}{formatCurrency(position.avgCostBasis)}
@@ -410,7 +425,9 @@ function PositionRow({ position, isOwner, onClick }: { position: any; isOwner: b
       <div className="text-right">
         {/* Short currentValue is stored as negative (liability) — display absolute value */}
         <p className="font-bold font-mono text-sm">{formatCurrency(Math.abs(position.currentValue))}</p>
-        <p className="text-xs text-muted-foreground font-mono">@ {formatCurrency(position.currentPrice)}</p>
+        <p className={`text-xs font-mono ${
+          isExtended ? (priceSource === "pre" ? "text-sky-400" : "text-violet-400") : "text-muted-foreground"
+        }`}>@ {formatCurrency(position.currentPrice)}{isExtended ? " *" : ""}</p>
       </div>
       <div className="text-right hidden md:block">
         <p className={`font-mono text-sm font-medium ${pnlClass(position.unrealizedPnl)}`}>

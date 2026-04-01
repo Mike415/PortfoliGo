@@ -13,6 +13,7 @@ async function fetchLivePrice(ticker: string): Promise<{
   changePct: number | null;
   name: string | null;
   assetType: AssetType;
+  priceSource: "regular" | "pre" | "post";
 } | null> {
   try {
     const q = await getQuote(ticker);
@@ -23,6 +24,7 @@ async function fetchLivePrice(ticker: string): Promise<{
       changePct: q.changePct,
       name: q.name,
       assetType: q.assetType,
+      priceSource: q.priceSource,
     };
   } catch (err) {
     console.error(`[Pricing] Failed to fetch price for ${ticker}:`, err);
@@ -77,7 +79,8 @@ export const pricingRouter = router({
         String(live.price),
         live.change !== null ? String(live.change) : null,
         live.changePct !== null ? String(live.changePct) : null,
-        live.name
+        live.name,
+        live.priceSource
       );
 
       return { ...live, fromCache: false };
@@ -126,7 +129,8 @@ export const pricingRouter = router({
                 String(live.price),
                 live.change !== null ? String(live.change) : null,
                 live.changePct !== null ? String(live.changePct) : null,
-                live.name
+                live.name,
+                live.priceSource
               );
               results[ticker] = { ...live, fromCache: false };
             } else if (cached) {
