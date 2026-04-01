@@ -211,3 +211,7 @@
 
 ## Railway Deploy Fix Round 3 (Round 18)
 - [x] Fix: Railway overriding Dockerfile CMD with pnpm start — added railway.json to force Dockerfile builder and explicit startCommand
+
+## Railway Deploy Fix Round 4 (Round 19)
+- [x] Fix: install pnpm in runtime stage so Railway's default pnpm start works
+- [x] Fix: update package.json start script to also launch Python earnings service
