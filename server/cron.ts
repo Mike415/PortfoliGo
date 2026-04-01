@@ -67,7 +67,10 @@ async function snapshotAllGroups() {
 
             if (result) {
               const { price } = result;
-              const currentValue = qty * price;
+              // Short currentValue is NEGATIVE (liability): -(qty × price).
+              // Cash proceeds were already credited on open, so this keeps
+              // totalValue = cashBalance + positionsValue correct.
+              const currentValue = isShort ? -(qty * price) : qty * price;
               const unrealizedPnl = isShort
                 ? (avgCost - price) * qty
                 : (price - avgCost) * qty;

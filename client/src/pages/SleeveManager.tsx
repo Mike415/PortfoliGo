@@ -408,7 +408,8 @@ function PositionRow({ position, isOwner, onClick }: { position: any; isOwner: b
         </p>
       </div>
       <div className="text-right">
-        <p className="font-bold font-mono text-sm">{formatCurrency(position.currentValue)}</p>
+        {/* Short currentValue is stored as negative (liability) — display absolute value */}
+        <p className="font-bold font-mono text-sm">{formatCurrency(Math.abs(position.currentValue))}</p>
         <p className="text-xs text-muted-foreground font-mono">@ {formatCurrency(position.currentPrice)}</p>
       </div>
       <div className="text-right hidden md:block">

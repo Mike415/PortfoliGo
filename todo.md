@@ -215,3 +215,6 @@
 ## Railway Deploy Fix Round 4 (Round 19)
 - [x] Fix: install pnpm in runtime stage so Railway's default pnpm start works
 - [x] Fix: update package.json start script to also launch Python earnings service
+
+## Short Position Bug Fix (Round 20)
+- [x] Fix: opening a short position incorrectly adds to portfolio value (should be neutral / reduce cash margin)

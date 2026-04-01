@@ -213,8 +213,11 @@ export const portfolioRouter = router({
           const avgCost = parseFloat(pos.avgCostBasis);
           const isShort = pos.isShort === 1;
 
-          // For short positions: profit when price falls below avg cost
-          const currentValue = qty * price;
+          // For short positions: profit when price falls below avg cost.
+          // Short currentValue is NEGATIVE (it is a liability): -(qty × price).
+          // This keeps totalValue = cashBalance + positionsValue correct because
+          // the short proceeds were already credited to cashBalance on open.
+          const currentValue = isShort ? -(qty * price) : qty * price;
           const unrealizedPnl = isShort
             ? (avgCost - price) * qty  // short: profit when price drops
             : (price - avgCost) * qty;
@@ -409,14 +412,16 @@ export const portfolioRouter = router({
           const existingCost = parseFloat(existingPos.avgCostBasis);
           const newQty = existingQty + input.quantity;
           const newAvgCost = (existingQty * existingCost + input.quantity * input.price) / newQty;
+          // Short currentValue is NEGATIVE (liability)
           await db.upsertPosition({
             ...existingPos,
             quantity: String(newQty),
             avgCostBasis: String(newAvgCost),
             currentPrice: String(input.price),
-            currentValue: String(newQty * input.price),
+            currentValue: String(-(newQty * input.price)),
           });
         } else {
+          // Short currentValue is NEGATIVE (liability)
           await db.upsertPosition({
             sleeveId: sleeve.id,
             ticker,
@@ -424,12 +429,14 @@ export const portfolioRouter = router({
             quantity: String(input.quantity),
             avgCostBasis: String(input.price),
             currentPrice: String(input.price),
-            currentValue: String(totalValue),
+            currentValue: String(-totalValue),
             isShort: 1,
           });
         }
 
-        // Short proceeds credited to cash; recalculate sleeve totals
+        // Short proceeds credited to cash; recalculate sleeve totals.
+        // positionsValue now subtracts the short liability (negative currentValue),
+        // so totalValue = newCash + positionsValue stays flat vs before the short.
         const newCashShort = cashBalance + totalValue;
         const freshPosShort = await db.getPositionsForSleeve(sleeve.id);
         const posValShort = freshPosShort.reduce((sum, p) => sum + (p.currentValue ? parseFloat(p.currentValue) : 0), 0);
@@ -470,11 +477,12 @@ export const portfolioRouter = router({
         if (newQty < 0.000001) {
           await db.deletePosition(existingPos.id);
         } else {
+          // Remaining short is still a liability (negative currentValue)
           await db.upsertPosition({
             ...existingPos,
             quantity: String(newQty),
             currentPrice: String(input.price),
-            currentValue: String(newQty * input.price),
+            currentValue: String(-(newQty * input.price)),
           });
         }
 
@@ -598,7 +606,8 @@ export const portfolioRouter = router({
             const avgCost = parseFloat(pos.avgCostBasis);
             const isShort = pos.isShort === 1;
 
-            const currentValue = qty * price;
+            // Short currentValue is NEGATIVE (liability); long is positive.
+            const currentValue = isShort ? -(qty * price) : qty * price;
             const unrealizedPnl = isShort
               ? (avgCost - price) * qty
               : (price - avgCost) * qty;

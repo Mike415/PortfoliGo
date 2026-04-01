@@ -213,3 +213,106 @@ describe("admin.previewReallocation", () => {
     await expect(caller.admin.previewReallocation({ groupId: 1 })).rejects.toThrow("Only group admins");
   });
 });
+
+// ─── Short position portfolio math tests ─────────────────────────────────────
+describe("portfolio.addTrade - short position math", () => {
+  function makeSleeve(overrides = {}) {
+    return {
+      id: 10,
+      groupId: 1,
+      userId: 1,
+      name: "My Sleeve",
+      allocatedCapital: "100000",
+      cashBalance: "100000",
+      positionsValue: "0",
+      totalValue: "100000",
+      realizedPnl: "0",
+      unrealizedPnl: "0",
+      returnPct: "0",
+      lastPricedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it("opening a short does NOT increase totalValue — it stays flat", async () => {
+    vi.mocked(db.getGroupMembership).mockResolvedValue({ id: 1, groupId: 1, userId: 1, role: "member", joinedAt: new Date() });
+    vi.mocked(db.getSleeveByUserAndGroup).mockResolvedValue(makeSleeve());
+    vi.mocked(db.getPositionByTicker).mockResolvedValue(null); // no existing position
+    vi.mocked(db.upsertPosition).mockResolvedValue(undefined as any);
+    vi.mocked(db.createTrade).mockResolvedValue(undefined as any);
+
+    // After the short is opened, the position row has currentValue = -5000 (liability).
+    // positionsValue = -5000, cashBalance = 105000, totalValue = 100000 — flat.
+    vi.mocked(db.getPositionsForSleeve).mockResolvedValue([
+      {
+        id: 1,
+        sleeveId: 10,
+        ticker: "TSLA",
+        assetType: "stock",
+        quantity: "100",
+        avgCostBasis: "50",
+        currentPrice: "50",
+        currentValue: "-5000", // negative — short liability
+        unrealizedPnl: "0",
+        unrealizedPnlPct: "0",
+        isShort: 1,
+        lastPricedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as any,
+    ]);
+
+    let savedCashBalance = "";
+    let savedTotalValue = "";
+    vi.mocked(db.updateSleeve).mockImplementation(async (_id, updates) => {
+      if (updates.cashBalance) savedCashBalance = updates.cashBalance;
+      if (updates.totalValue) savedTotalValue = updates.totalValue;
+      return undefined as any;
+    });
+
+    const caller = appRouter.createCaller(makeCtx({ user: makeUser() }));
+    await caller.portfolio.addTrade({
+      groupId: 1,
+      ticker: "TSLA",
+      side: "short",
+      quantity: 100,
+      price: 50, // $5,000 short
+    });
+
+    // Cash should have increased by $5,000 (short proceeds)
+    expect(parseFloat(savedCashBalance)).toBe(105000);
+    // totalValue = 105000 cash + (-5000 positionsValue) = 100000 — unchanged
+    expect(parseFloat(savedTotalValue)).toBe(100000);
+  });
+
+  it("short position currentValue stored as negative number", async () => {
+    vi.mocked(db.getGroupMembership).mockResolvedValue({ id: 1, groupId: 1, userId: 1, role: "member", joinedAt: new Date() });
+    vi.mocked(db.getSleeveByUserAndGroup).mockResolvedValue(makeSleeve());
+    vi.mocked(db.getPositionByTicker).mockResolvedValue(null);
+    vi.mocked(db.createTrade).mockResolvedValue(undefined as any);
+    vi.mocked(db.getPositionsForSleeve).mockResolvedValue([]);
+
+    let upsertedCurrentValue = "";
+    vi.mocked(db.upsertPosition).mockImplementation(async (pos) => {
+      upsertedCurrentValue = pos.currentValue ?? "";
+      return undefined as any;
+    });
+    vi.mocked(db.updateSleeve).mockResolvedValue(undefined as any);
+
+    const caller = appRouter.createCaller(makeCtx({ user: makeUser() }));
+    await caller.portfolio.addTrade({
+      groupId: 1,
+      ticker: "NVDA",
+      side: "short",
+      quantity: 10,
+      price: 200, // $2,000 short
+    });
+
+    // currentValue should be stored as -2000 (negative = liability)
+    expect(parseFloat(upsertedCurrentValue)).toBe(-2000);
+  });
+});
