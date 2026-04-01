@@ -5,7 +5,7 @@ Called internally by the Node.js server.
 
 Endpoints:
   GET /earnings?from=YYYY-MM-DD&to=YYYY-MM-DD
-    Returns JSON array of { symbol, name, reportDate, timeOfDay, epsEstimate }
+    Returns JSON array of { symbol, reportDate }
     Filtered to the given date range.
 
   GET /earnings/ticker?symbol=AAPL
@@ -18,74 +18,86 @@ Endpoints:
 import os
 import json
 import datetime
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, request, jsonify
 import yfinance as yf
 
 app = Flask(__name__)
 
 # ── Popular tickers to pre-populate the calendar ─────────────────────────────
-# We fetch earnings dates for a curated list of liquid, well-known stocks.
-# yfinance doesn't have a bulk "all upcoming earnings" endpoint, so we maintain
-# a list of the most-traded names that managers are likely to pick.
 TRACKED_TICKERS = [
     # Mega-cap tech
-    "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "META", "NVDA", "TSLA",
+    "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA",
     # Semiconductors
-    "AMD", "INTC", "QCOM", "AVGO", "MU", "AMAT", "LRCX", "KLAC", "TSM",
+    "AMD", "INTC", "QCOM", "AVGO", "MU", "AMAT", "LRCX", "TSM",
     # Finance
-    "JPM", "BAC", "GS", "MS", "WFC", "C", "BLK", "V", "MA", "AXP",
+    "JPM", "BAC", "GS", "MS", "WFC", "C", "V", "MA",
     # Healthcare
-    "JNJ", "UNH", "PFE", "ABBV", "MRK", "LLY", "TMO", "ABT", "BMY",
+    "JNJ", "UNH", "PFE", "ABBV", "MRK", "LLY",
     # Consumer
-    "AMZN", "WMT", "COST", "TGT", "HD", "LOW", "NKE", "SBUX", "MCD",
+    "WMT", "COST", "TGT", "HD", "NKE", "SBUX", "MCD",
     # Energy
-    "XOM", "CVX", "COP", "SLB", "EOG", "OXY",
-    # Industrial / Aerospace
-    "BA", "CAT", "GE", "HON", "RTX", "LMT", "NOC",
+    "XOM", "CVX", "COP",
+    # Industrial
+    "BA", "CAT", "GE", "HON", "RTX", "LMT",
     # Telecom / Media
-    "T", "VZ", "NFLX", "DIS", "CMCSA",
+    "T", "NFLX", "DIS",
     # Cloud / SaaS
-    "CRM", "NOW", "SNOW", "PLTR", "UBER", "LYFT", "ABNB", "DASH",
-    # ETFs (no earnings but included for completeness — filtered out below)
+    "CRM", "NOW", "SNOW", "PLTR", "UBER", "ABNB",
 ]
 
-# Cache: { ticker: { date: "YYYY-MM-DD", fetched_at: timestamp } }
+# Cache: { ticker: { date: "YYYY-MM-DD" | None, fetched_at: float } }
 _cache: dict = {}
+_cache_lock = threading.Lock()
 CACHE_TTL_SECONDS = 3600  # 1 hour
 
 
-def get_earnings_date(ticker: str) -> str | None:
-    """Return the next earnings date for a ticker as YYYY-MM-DD string, or None."""
+def _fetch_one(ticker: str) -> tuple[str, str | None]:
+    """Fetch earnings date for a single ticker. Returns (ticker, date_str | None)."""
     now = datetime.datetime.utcnow().timestamp()
-    cached = _cache.get(ticker)
-    if cached and (now - cached["fetched_at"]) < CACHE_TTL_SECONDS:
-        return cached["date"]
+    with _cache_lock:
+        cached = _cache.get(ticker)
+        if cached and (now - cached["fetched_at"]) < CACHE_TTL_SECONDS:
+            return ticker, cached["date"]
 
     try:
         t = yf.Ticker(ticker)
         cal = t.calendar
         if not cal:
-            _cache[ticker] = {"date": None, "fetched_at": now}
-            return None
-        dates = cal.get("Earnings Date", [])
-        if not dates:
-            _cache[ticker] = {"date": None, "fetched_at": now}
-            return None
-        # Pick the first future date
-        today = datetime.date.today()
-        future = [d for d in dates if isinstance(d, datetime.date) and d >= today]
-        result = str(future[0]) if future else None
-        _cache[ticker] = {"date": result, "fetched_at": now}
-        return result
+            result = None
+        else:
+            dates = cal.get("Earnings Date", [])
+            today = datetime.date.today()
+            future = [d for d in dates if isinstance(d, datetime.date) and d >= today]
+            result = str(future[0]) if future else None
     except Exception as e:
         print(f"[earnings_service] Error fetching {ticker}: {e}")
-        _cache[ticker] = {"date": None, "fetched_at": now}
-        return None
+        result = None
+
+    with _cache_lock:
+        _cache[ticker] = {"date": result, "fetched_at": now}
+    return ticker, result
+
+
+def _warm_cache():
+    """Pre-warm the cache in background using parallel fetching."""
+    print("[earnings_service] Pre-warming cache in background...")
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(_fetch_one, t): t for t in TRACKED_TICKERS}
+        count = 0
+        for future in as_completed(futures):
+            ticker, date = future.result()
+            if date:
+                count += 1
+    print(f"[earnings_service] Cache warm complete: {count}/{len(TRACKED_TICKERS)} tickers have upcoming earnings")
 
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok"})
+    with _cache_lock:
+        cached_count = sum(1 for v in _cache.values() if v.get("date"))
+    return jsonify({"status": "ok", "cached_tickers": len(_cache), "with_dates": cached_count})
 
 
 @app.route("/earnings")
@@ -102,9 +114,13 @@ def earnings_calendar():
     except ValueError:
         return jsonify({"error": "Invalid date format, use YYYY-MM-DD"}), 400
 
+    # Use cached data only (no blocking fetches during request)
     results = []
-    for ticker in TRACKED_TICKERS:
-        date_str = get_earnings_date(ticker)
+    with _cache_lock:
+        snapshot = dict(_cache)
+
+    for ticker, entry in snapshot.items():
+        date_str = entry.get("date")
         if not date_str:
             continue
         try:
@@ -112,14 +128,8 @@ def earnings_calendar():
         except ValueError:
             continue
         if from_date <= report_date <= to_date:
-            # Get name from cache if available
-            cached = _cache.get(ticker, {})
-            results.append({
-                "symbol": ticker,
-                "reportDate": date_str,
-            })
+            results.append({"symbol": ticker, "reportDate": date_str})
 
-    # Sort by date
     results.sort(key=lambda x: x["reportDate"])
     return jsonify(results)
 
@@ -130,11 +140,21 @@ def earnings_ticker():
     if not symbol:
         return jsonify({"error": "symbol query param required"}), 400
 
-    date_str = get_earnings_date(symbol)
+    # Check cache first
+    with _cache_lock:
+        cached = _cache.get(symbol)
+    now = datetime.datetime.utcnow().timestamp()
+    if cached and (now - cached["fetched_at"]) < CACHE_TTL_SECONDS:
+        return jsonify({"symbol": symbol, "reportDate": cached["date"]})
+
+    # Not cached — fetch synchronously (single ticker is fast)
+    _, date_str = _fetch_one(symbol)
     return jsonify({"symbol": symbol, "reportDate": date_str})
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("EARNINGS_SERVICE_PORT", "5001"))
     print(f"[earnings_service] Starting on port {port}")
-    app.run(host="0.0.0.0", port=port, debug=False)
+    # Pre-warm cache in background so first request is fast
+    threading.Thread(target=_warm_cache, daemon=True).start()
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

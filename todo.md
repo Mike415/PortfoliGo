@@ -196,3 +196,8 @@
 - [x] Backend: earningsCalendar procedure merges live data with fallback; uses fallback-only when service unreachable
 - [x] Backend: enterEarningsPick auto-resolves reportDate from fallback if service unavailable
 - [x] Frontend: existing picks show reportDate even when fetched without calendar (auto-fetch on submit)
+
+## Earnings Modal Fix (Round 15)
+- [x] Fix: EarningsPickDialog shows "No tracked earnings" — root cause was Python service timing out due to sequential API calls
+- [x] Fix: Rewrote Python service to pre-warm cache in parallel on startup; requests now return instantly from cache
+- [x] Fix: Static fallback calendar always shown when Python service is unavailable (Railway before redeploy)
