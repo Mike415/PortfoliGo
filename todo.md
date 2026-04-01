@@ -205,3 +205,6 @@
 ## Railway Deploy Fix (Round 16)
 - [x] Fix: nixpacks.toml causing Railway build failure — replaced with Dockerfile using node:22-slim + python3 + pip3
 - [x] Added .dockerignore to exclude node_modules, dist, .git from build context
+
+## Railway Dockerfile Fix Round 2 (Round 17)
+- [x] Fix: Dockerfile missing COPY patches/ before pnpm install — caused ENOENT on wouter@3.7.1.patch
