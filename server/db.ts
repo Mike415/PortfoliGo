@@ -65,6 +65,19 @@ export async function updateUserLastSignedIn(id: number) {
   await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, id));
 }
 
+export async function updateUserEmail(id: number, email: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users).set({ email: email.toLowerCase().trim() }).where(eq(users.id, id));
+}
+
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.select().from(users).where(eq(users.email, email.toLowerCase().trim())).limit(1);
+  return result[0] ?? null;
+}
+
 // ─── Sessions ─────────────────────────────────────────────────────────────────
 
 export async function createSession(id: string, userId: number, expiresAt: number) {

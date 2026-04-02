@@ -265,3 +265,13 @@
 - [x] ErrorBoundary: friendly error message instead of raw stack trace
 - [x] TradeRow: show total trade value and time in trade history
 - [x] Fix: formatPct double-plus in P&L display
+
+## Email Collection + Auth Audit (Round 30)
+- [x] Schema: add email column (nullable) to users table
+- [x] Backend: update register procedure to accept and store email (optional, with uniqueness check)
+- [x] Backend: add updateUserEmail protected procedure for existing-user migration
+- [x] Backend: return email field in auth.me response
+- [x] Frontend: add email field to Create Account form in Login.tsx
+- [x] Frontend: add email field to JoinGroup.tsx inline registration
+- [x] Frontend: show "Complete your profile" email prompt after login if user.email is null (EmailMigrationPrompt.tsx)
+- [x] Frontend: email prompt dismissible with localStorage flag to avoid re-showing on every page load

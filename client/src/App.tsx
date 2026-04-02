@@ -11,6 +11,7 @@ import JoinGroup from "./pages/JoinGroup";
 import GroupDashboard from "./pages/GroupDashboard";
 import SleeveManager from "./pages/SleeveManager";
 import AdminPanel from "./pages/AdminPanel";
+import { EmailMigrationPrompt } from "./components/EmailMigrationPrompt";
 
 function Router() {
   return (
@@ -35,6 +36,7 @@ function App() {
       <ThemeProvider defaultTheme="dark">
         <TooltipProvider>
           <Toaster />
+          <EmailMigrationPrompt />
           <Router />
         </TooltipProvider>
       </ThemeProvider>

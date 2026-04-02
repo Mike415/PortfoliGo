@@ -18,7 +18,11 @@ function generateSessionId(): string {
 
 export const authRouter = router({
   // Get current user
-  me: publicProcedure.query((opts) => opts.ctx.user),
+  me: publicProcedure.query((opts) => {
+    if (!opts.ctx.user) return null;
+    const { id, username, displayName, role, email } = opts.ctx.user;
+    return { id, username, displayName, role, email: email ?? null };
+  }),
 
   // Register a new user
   register: publicProcedure
@@ -29,6 +33,7 @@ export const authRouter = router({
           .pipe(z.string().min(3).max(32).regex(/^[a-zA-Z0-9_ -]+$/, "Username can only contain letters, numbers, spaces, underscores, and hyphens")),
         passcode: z.string().min(4).max(64),
         displayName: z.string().max(64).optional(),
+        email: z.string().email("Please enter a valid email address").optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -37,12 +42,21 @@ export const authRouter = router({
         throw new TRPCError({ code: "CONFLICT", message: "Username already taken" });
       }
 
+      // Check email uniqueness if provided
+      if (input.email) {
+        const emailExists = await db.getUserByEmail(input.email);
+        if (emailExists) {
+          throw new TRPCError({ code: "CONFLICT", message: "An account with this email already exists" });
+        }
+      }
+
       const passcodeHash = hashPasscode(input.passcode);
       const user = await db.createUser({
         username: input.username.toLowerCase(),
         passcodeHash,
         displayName: input.displayName || input.username,
         role: "user",
+        email: input.email ? input.email.toLowerCase().trim() : undefined,
       });
 
       if (!user) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to create user" });
@@ -58,7 +72,7 @@ export const authRouter = router({
         maxAge: ONE_YEAR_MS,
       });
 
-      return { success: true, user: { id: user.id, username: user.username, displayName: user.displayName, role: user.role } };
+      return { success: true, user: { id: user.id, username: user.username, displayName: user.displayName, role: user.role, email: user.email ?? null } };
     }),
 
   // Login with username + passcode
@@ -92,7 +106,24 @@ export const authRouter = router({
         maxAge: ONE_YEAR_MS,
       });
 
-      return { success: true, user: { id: user.id, username: user.username, displayName: user.displayName, role: user.role } };
+      return { success: true, user: { id: user.id, username: user.username, displayName: user.displayName, role: user.role, email: user.email ?? null } };
+    }),
+
+  // Update email (for existing users who signed up without one)
+  updateEmail: protectedProcedure
+    .input(
+      z.object({
+        email: z.string().email("Please enter a valid email address"),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      // Check uniqueness
+      const existing = await db.getUserByEmail(input.email);
+      if (existing && existing.id !== ctx.user.id) {
+        throw new TRPCError({ code: "CONFLICT", message: "An account with this email already exists" });
+      }
+      await db.updateUserEmail(ctx.user.id, input.email);
+      return { success: true };
     }),
 
   // Logout

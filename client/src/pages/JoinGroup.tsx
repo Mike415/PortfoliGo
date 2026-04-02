@@ -36,6 +36,7 @@ export default function JoinGroup() {
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [passcode, setPasscode] = useState("");
+  const [email, setEmail] = useState("");
   const [showPasscode, setShowPasscode] = useState(false);
   const [step, setStep] = useState<"enter-code" | "preview">(
     params.code ? "preview" : "enter-code"
@@ -70,7 +71,7 @@ export default function JoinGroup() {
     e.preventDefault();
     if (!previewQuery.data) return;
     try {
-      await registerMutation.mutateAsync({ username, displayName, passcode });
+      await registerMutation.mutateAsync({ username, displayName, passcode, email: email || undefined });
       await joinMutation.mutateAsync({ inviteCode: confirmedCode });
     } catch (err: any) {
       // Parse Zod JSON validation errors into a friendly message
@@ -255,6 +256,21 @@ export default function JoinGroup() {
                             value={displayName}
                             onChange={(e) => setDisplayName(e.target.value)}
                           />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="jg-email">Email <span className="text-muted-foreground">(optional — for account recovery)</span></Label>
+                          <div className="relative">
+                            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                            <Input
+                              id="jg-email"
+                              type="email"
+                              placeholder="you@example.com"
+                              className="pl-9"
+                              value={email}
+                              onChange={(e) => setEmail(e.target.value)}
+                              autoComplete="email"
+                            />
+                          </div>
                         </div>
                         <div className="space-y-1">
                           <Label htmlFor="jg-passcode">Passcode</Label>
