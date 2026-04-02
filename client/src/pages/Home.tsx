@@ -142,6 +142,9 @@ function GroupCard({ group, userId, onOpen }: { group: any; userId: number; onOp
     completed: "text-muted-foreground bg-muted/10 border-border",
   };
 
+  const pnlClass = (val: number | null) =>
+    val == null ? "" : val > 0 ? "text-[oklch(0.65_0.18_145)]" : val < 0 ? "text-[oklch(0.60_0.22_25)]" : "text-muted-foreground";
+
   return (
     <Card
       className="border-border/50 bg-card/80 hover:bg-card transition-colors cursor-pointer group"
@@ -162,17 +165,27 @@ function GroupCard({ group, userId, onOpen }: { group: any; userId: number; onOp
         )}
       </CardHeader>
       <CardContent>
-        <div className="flex items-center justify-between text-sm">
+        <div className="flex items-center justify-between text-sm mb-3">
           <div className="flex items-center gap-1.5 text-muted-foreground">
             <Users className="w-3.5 h-3.5" />
-            <span>Up to {group.maxParticipants} managers</span>
+            <span>{group.currentMembers ?? 0} / {group.maxParticipants} managers</span>
           </div>
-          <div className="flex items-center gap-1 text-primary group-hover:gap-2 transition-all">
-            <span className="text-xs font-medium">Open</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </div>
+          {group.myRank && (
+            <div className="flex items-center gap-1">
+              <Trophy className="w-3.5 h-3.5 text-yellow-400" />
+              <span className="text-xs font-medium text-yellow-400">#{group.myRank}</span>
+            </div>
+          )}
         </div>
-        <div className="mt-3 pt-3 border-t border-border/50 grid grid-cols-2 gap-2 text-xs">
+        {group.myReturnPct != null && (
+          <div className="mb-3 pb-3 border-b border-border/50">
+            <p className="text-xs text-muted-foreground mb-0.5">Your Performance</p>
+            <p className={`text-sm font-mono font-bold ${pnlClass(group.myReturnPct)}`}>
+              {formatPct(group.myReturnPct)} return
+            </p>
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-2 text-xs">
           <div>
             <p className="text-muted-foreground">Total Capital</p>
             <p className="font-mono font-medium">{formatCurrency(parseFloat(group.totalCapital))}</p>

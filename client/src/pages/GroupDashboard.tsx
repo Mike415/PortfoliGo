@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/chart";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Legend,
+  ResponsiveContainer,
 } from "recharts";
 import {
   TrendingUp, ArrowLeft, RefreshCw, Trophy, Wallet,
@@ -22,6 +23,7 @@ import {
 import { useLocation, useParams } from "wouter";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // Distinct colors for up to 10 participants
 const SLEEVE_COLORS = [
@@ -129,10 +131,61 @@ export default function GroupDashboard() {
     return { chartData: data, chartConfig: config };
   }, [leaderboardSnapshots]);
 
+  // Build per-sleeve sparkline data map for leaderboard rows
+  const sparklineMap = useMemo(() => {
+    const map = new Map<number, { totalValue: number }[]>();
+    const series = leaderboardSnapshots?.series;
+    if (!series) return map;
+    series.forEach((s: { sleeveId: number; data: { date: string; totalValue: number }[] }) => {
+      const sorted = [...s.data].sort((a, b) => a.date.localeCompare(b.date));
+      map.set(s.sleeveId, sorted.map((d) => ({ totalValue: d.totalValue })));
+    });
+    return map;
+  }, [leaderboardSnapshots]);
+
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <TrendingUp className="w-8 h-8 text-primary animate-pulse" />
+      <div className="min-h-screen bg-background">
+        <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-40">
+          <div className="container flex items-center justify-between h-14">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-8 w-8 rounded-md" />
+              <div className="space-y-1">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+            </div>
+            <Skeleton className="h-8 w-20" />
+          </div>
+        </header>
+        <main className="container py-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="rounded-lg border border-border/50 bg-card/80 p-4 space-y-2">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-6 w-28" />
+                <Skeleton className="h-3 w-16" />
+              </div>
+            ))}
+          </div>
+          <Skeleton className="h-10 w-full mb-4 rounded-lg" />
+          <div className="space-y-2">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="rounded-lg border border-border/50 bg-card/50 p-4 flex items-center gap-4">
+                <Skeleton className="h-8 w-8 rounded-full" />
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-3 w-24" />
+                </div>
+                <Skeleton className="h-8 w-16 hidden sm:block" />
+                <div className="text-right space-y-1">
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-3 w-14" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </main>
       </div>
     );
   }
@@ -325,12 +378,14 @@ export default function GroupDashboard() {
               </div>
             )}
             <div className="space-y-2">
-              {leaderboard.entries.map((entry) => (
+              {leaderboard.entries.map((entry, i) => (
                 <LeaderboardRow
                   key={entry.sleeveId}
                   entry={entry}
                   total={leaderboard.entries.length}
                   onOpenSleeve={() => setLocation(`/group/${groupId}/sleeve/${entry.sleeveId}`)}
+                  sparklineData={sparklineMap.get(entry.sleeveId)}
+                  sparklineColor={SLEEVE_COLORS[i % SLEEVE_COLORS.length]}
                 />
               ))}
             </div>
@@ -469,7 +524,33 @@ function MetricCard({ label, value, valueClass = "" }: { label: string; value: s
   );
 }
 
-function LeaderboardRow({ entry, total, onOpenSleeve }: { entry: any; total: number; onOpenSleeve: () => void }) {
+function MiniSparkline({ data, color }: { data: { totalValue: number }[]; color: string }) {
+  if (!data || data.length < 2) return null;
+  return (
+    <div className="w-16 h-8 shrink-0 hidden sm:block">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 2, right: 2, left: 2, bottom: 2 }}>
+          <Line
+            type="monotone"
+            dataKey="totalValue"
+            stroke={color}
+            strokeWidth={1.5}
+            dot={false}
+            isAnimationActive={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function LeaderboardRow({ entry, total, onOpenSleeve, sparklineData, sparklineColor }: {
+  entry: any;
+  total: number;
+  onOpenSleeve: () => void;
+  sparklineData?: { totalValue: number }[];
+  sparklineColor?: string;
+}) {
   const isFirst = entry.rank === 1;
   const isLast = entry.rank === total;
   const returnIsPositive = entry.returnPct > 0;
@@ -477,7 +558,7 @@ function LeaderboardRow({ entry, total, onOpenSleeve }: { entry: any; total: num
 
   return (
     <div
-      className={`flex items-center gap-4 p-4 rounded-lg border cursor-pointer transition-colors hover:bg-accent/30 ${
+      className={`flex items-center gap-3 p-4 rounded-lg border cursor-pointer transition-colors hover:bg-accent/30 ${
         entry.isMe ? "border-primary/30 bg-primary/5" : "border-border/50 bg-card/50"
       }`}
       onClick={onOpenSleeve}
@@ -503,6 +584,11 @@ function LeaderboardRow({ entry, total, onOpenSleeve }: { entry: any; total: num
           Alloc: {formatCurrency(entry.allocatedCapital, true)}
         </p>
       </div>
+
+      {/* Mini sparkline */}
+      {sparklineData && sparklineData.length >= 2 && (
+        <MiniSparkline data={sparklineData} color={sparklineColor || SLEEVE_COLORS[0]} />
+      )}
 
       {/* Values */}
       <div className="text-right shrink-0">

@@ -249,3 +249,19 @@
 
 ## After-Hours Price Debug (Round 28)
 - [x] Fix: after-hours prices not showing — v8/chart 1d endpoint doesn't return marketState/postMarketPrice; switched to 1m+includePrePost=true and classify price source from last candle timestamp vs currentTradingPeriod boundaries
+
+## Broad UI/UX/Engagement Improvements (Round 29)
+- [x] Home: GroupCard shows user's sleeve return % and rank (already implemented)
+- [x] Home: GroupCard shows actual manager count (already implemented)
+- [x] Leaderboard: add 7-day mini sparkline per manager row
+- [ ] Leaderboard: rank change indicator vs yesterday
+- [x] SleeveManager: show unrealized P&L on mobile (removed hidden md:block)
+- [x] SleeveManager: loading skeleton instead of spinner
+- [x] SleeveManager: stale price banner if lastPricedAt > 30 min
+- [x] SleeveManager: intraday snapshot on every Refresh (already implemented)
+- [x] TradeForm: "Max shares" quick-fill button
+- [x] TradeForm: confirmation dialog for large trades (>20% of portfolio)
+- [x] JoinGroup: fix stale username hint text (done in Round 25)
+- [x] ErrorBoundary: friendly error message instead of raw stack trace
+- [x] TradeRow: show total trade value and time in trade history
+- [x] Fix: formatPct double-plus in P&L display

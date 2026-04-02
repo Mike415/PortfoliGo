@@ -73,7 +73,13 @@ export default function JoinGroup() {
       await registerMutation.mutateAsync({ username, displayName, passcode });
       await joinMutation.mutateAsync({ inviteCode: confirmedCode });
     } catch (err: any) {
-      toast.error(err.message ?? "Something went wrong");
+      // Parse Zod JSON validation errors into a friendly message
+      let msg = err.message ?? "Something went wrong";
+      try {
+        const parsed = JSON.parse(msg);
+        if (Array.isArray(parsed) && parsed[0]?.message) msg = parsed[0].message;
+      } catch { /* not JSON */ }
+      toast.error(msg);
     }
   }
 
@@ -237,7 +243,7 @@ export default function JoinGroup() {
                               required
                             />
                           </div>
-                          <p className="text-xs text-muted-foreground">Letters, numbers, underscores, hyphens only</p>
+                          <p className="text-xs text-muted-foreground">Letters, numbers, spaces, underscores, hyphens</p>
                         </div>
                         <div className="space-y-1">
                           <Label htmlFor="jg-displayname">

@@ -115,6 +115,7 @@ export const portfolioRouter = router({
         realizedPnl: parseFloat(sleeve.realizedPnl),
         unrealizedPnl: parseFloat(sleeve.unrealizedPnl),
         returnPct: parseFloat(sleeve.returnPct),
+        lastPricedAt: sleeve.lastPricedAt,
         isOwner,
         ownerDisplayName: owner?.displayName || owner?.username || "Unknown",
         positions: positions.map((p, i) => ({

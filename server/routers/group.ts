@@ -144,10 +144,29 @@ export const groupRouter = router({
       return { success: true, group };
     }),
 
-  // Get all groups for current user
+  // Get all groups for current user — enriched with user's sleeve stats
   list: protectedProcedure.query(async ({ ctx }) => {
     const groups = await db.getGroupsByUser(ctx.user.id);
-    return groups;
+    return Promise.all(
+      groups.map(async (group) => {
+        const sleeve = await db.getSleeveByUserAndGroup(ctx.user.id, group.id);
+        const allSleeves = await db.getSleevesForGroup(group.id);
+        // Compute rank by returnPct descending
+        const sorted = [...allSleeves].sort(
+          (a, b) => parseFloat(String(b.returnPct ?? 0)) - parseFloat(String(a.returnPct ?? 0))
+        );
+        const myRank = sleeve ? sorted.findIndex((s) => s.id === sleeve.id) + 1 : null;
+        return {
+          ...group,
+          currentMembers: allSleeves.length,
+          mySleeveId: sleeve?.id ?? null,
+          myReturnPct: sleeve ? parseFloat(String(sleeve.returnPct ?? 0)) : null,
+          myTotalValue: sleeve ? parseFloat(String(sleeve.totalValue ?? 0)) : null,
+          myRank,
+          totalManagers: allSleeves.length,
+        };
+      })
+    );
   }),
 
   // Get a specific group with members and sleeves

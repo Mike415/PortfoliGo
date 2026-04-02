@@ -26,6 +26,7 @@ import {
 import { useLocation, useParams } from "wouter";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { toast } from "sonner";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type AssetType = "stock" | "etf" | "crypto";
 type TradeSide = "buy" | "sell" | "short" | "cover";
@@ -104,8 +105,47 @@ export default function SleeveManager() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <TrendingUp className="w-8 h-8 text-primary animate-pulse" />
+      <div className="min-h-screen bg-background">
+        <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-40">
+          <div className="container flex items-center justify-between h-14">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-8 w-8 rounded-md" />
+              <div className="space-y-1">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-3 w-20" />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Skeleton className="h-8 w-20" />
+              <Skeleton className="h-8 w-16" />
+            </div>
+          </div>
+        </header>
+        <main className="container py-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="rounded-lg border border-border/50 bg-card/80 p-4 space-y-2">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-6 w-28" />
+                <Skeleton className="h-3 w-16" />
+              </div>
+            ))}
+          </div>
+          <div className="rounded-lg border border-border/50 bg-card/80 p-4 mb-6">
+            <Skeleton className="h-[180px] w-full" />
+          </div>
+          <div className="space-y-2">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="rounded-lg border border-border/50 bg-card/50 p-4 flex gap-4">
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-3 w-32" />
+                </div>
+                <Skeleton className="h-10 w-20" />
+              </div>
+            ))}
+          </div>
+        </main>
       </div>
     );
   }
@@ -198,6 +238,7 @@ export default function SleeveManager() {
             <TradeForm
               groupId={gId}
               cashBalance={sleeve.cashBalance}
+              sleeveValue={sleeve.totalValue}
               prefill={prefillPosition}
               onSuccess={() => { handleTradeDialogClose(false); refetch(); }}
             />
@@ -206,6 +247,20 @@ export default function SleeveManager() {
       )}
 
       <main className="container py-6">
+        {/* Stale price warning */}
+        {sleeve.lastPricedAt && (Date.now() - new Date(sleeve.lastPricedAt).getTime()) > 30 * 60 * 1000 && (
+          <div className="mb-4 rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 flex items-start gap-3">
+            <Clock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-medium text-amber-400">Prices may be stale</p>
+              <p className="text-amber-400/80 text-xs mt-0.5">
+                Last refreshed {Math.floor((Date.now() - new Date(sleeve.lastPricedAt).getTime()) / 60000)} minutes ago.
+                {isOwner && " Hit Refresh to update."}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Sleeve metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           <Card className="border-border/50 bg-card/80">
@@ -453,9 +508,9 @@ function PositionRow({ position, isOwner, onClick }: { position: any; isOwner: b
           isExtended ? (priceSource === "pre" ? "text-sky-400" : "text-violet-400") : "text-muted-foreground"
         }`}>@ {formatCurrency(position.currentPrice)}{isExtended ? " *" : ""}</p>
       </div>
-      <div className="text-right hidden md:block">
+      <div className="text-right">
         <p className={`font-mono text-sm font-medium ${pnlClass(position.unrealizedPnl)}`}>
-          {formatCurrency(position.unrealizedPnl)}
+          {position.unrealizedPnl >= 0 ? "+" : ""}{formatCurrency(position.unrealizedPnl)}
         </p>
         <p className={`text-xs font-mono ${pnlClass(position.unrealizedPnlPct)}`}>
           {formatPct(position.unrealizedPnlPct)}
@@ -478,20 +533,26 @@ function TradeRow({ trade }: { trade: any }) {
     short: <TrendingDown className="w-4 h-4" />,
     cover: <TrendingUp className="w-4 h-4" />,
   };
+  const totalValue = trade.quantity * trade.price;
 
   return (
-    <div className="flex items-center gap-4 p-3 rounded-lg border border-border/30 bg-card/30 text-sm">
-      <div className={`flex items-center gap-1 font-medium shrink-0 ${sideColors[trade.side] || "text-muted-foreground"}`}>
+    <div className="flex items-center gap-3 p-3 rounded-lg border border-border/30 bg-card/30 text-sm">
+      <div className={`flex items-center gap-1 font-medium shrink-0 w-14 ${sideColors[trade.side] || "text-muted-foreground"}`}>
         {sideIcons[trade.side]}
-        {trade.side.toUpperCase()}
+        <span className="text-xs">{trade.side.toUpperCase()}</span>
       </div>
       <div className="flex-1 min-w-0">
-        <span className="font-mono font-bold">{trade.ticker}</span>
-        <span className="text-muted-foreground ml-2">{formatQuantity(trade.quantity)} @ {formatCurrency(trade.price)}</span>
+        <div className="flex items-center gap-2">
+          <span className="font-mono font-bold">{trade.ticker}</span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {formatQuantity(trade.quantity)} shares @ {formatCurrency(trade.price)}
+        </p>
       </div>
       <div className="text-right shrink-0">
+        <p className="font-mono text-sm font-medium">{formatCurrency(totalValue, true)}</p>
         <p className="font-mono text-xs text-muted-foreground">
-          {new Date(trade.executedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+          {new Date(trade.executedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
         </p>
       </div>
     </div>
@@ -618,11 +679,13 @@ function TickerSearch({
 function TradeForm({
   groupId,
   cashBalance,
+  sleeveValue,
   prefill,
   onSuccess,
 }: {
   groupId: number;
   cashBalance: number;
+  sleeveValue: number;
   prefill: null | { ticker: string; assetType: AssetType; price: number; isShort: boolean };
   onSuccess: () => void;
 }) {
@@ -635,6 +698,7 @@ function TradeForm({
     assetType: (prefill?.assetType || "stock") as AssetType,
     isShort: prefill?.isShort || false,
   });
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const utils = trpc.useUtils();
 
   const handleShortToggle = (checked: boolean) => {
@@ -683,19 +747,29 @@ function TradeForm({
       ];
 
   const canSubmit = form.ticker && form.quantity && form.price && parseFloat(form.price) > 0 && !tradeMutation.isPending;
+  const isLargeTrade = sleeveValue > 0 && totalValue / sleeveValue > 0.20;
+
+  const executeTrade = () => {
+    tradeMutation.mutate({
+      groupId,
+      ticker: form.ticker.toUpperCase(),
+      side: form.side,
+      quantity: parseFloat(form.quantity),
+      price: parseFloat(form.price),
+      assetType: form.assetType,
+    });
+  };
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        tradeMutation.mutate({
-          groupId,
-          ticker: form.ticker.toUpperCase(),
-          side: form.side,
-          quantity: parseFloat(form.quantity),
-          price: parseFloat(form.price),
-          assetType: form.assetType,
-        });
+        if (!canSubmit) return;
+        if (isLargeTrade) {
+          setConfirmOpen(true);
+        } else {
+          executeTrade();
+        }
       }}
       className="space-y-4"
     >
@@ -763,7 +837,21 @@ function TradeForm({
       {/* Quantity + Price (price is read-only — always from live quote) */}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
-          <Label>Quantity</Label>
+          <div className="flex items-center justify-between">
+            <Label>Quantity</Label>
+            {form.price && parseFloat(form.price) > 0 && (form.side === "buy" || form.side === "cover") && (
+              <button
+                type="button"
+                className="text-xs text-primary hover:text-primary/80 font-medium transition-colors cursor-pointer"
+                onClick={() => {
+                  const maxQty = Math.floor(cashBalance / parseFloat(form.price));
+                  if (maxQty > 0) setForm((f) => ({ ...f, quantity: String(maxQty) }));
+                }}
+              >
+                Max ({Math.floor(cashBalance / parseFloat(form.price)).toLocaleString()})
+              </button>
+            )}
+          </div>
           <Input
             type="number"
             step="any"
@@ -835,8 +923,49 @@ function TradeForm({
       >
         {tradeMutation.isPending
           ? "Executing..."
-          : `${form.side.charAt(0).toUpperCase() + form.side.slice(1)} ${form.ticker || "..."}`}
+          : `${form.side.charAt(0).toUpperCase() + form.side.slice(1)} ${form.ticker || "..."}` }
       </Button>
+
+      {/* Large trade confirmation dialog */}
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-400">
+              <BarChart2 className="w-5 h-5" />
+              Large Trade — Confirm
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              This trade is <span className="font-bold text-foreground">{formatCurrency(totalValue)}</span> ({((totalValue / sleeveValue) * 100).toFixed(1)}% of your portfolio). Are you sure you want to proceed?
+            </p>
+            <div className="rounded-lg bg-muted/30 p-3 text-sm space-y-1">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{form.side.toUpperCase()}</span>
+                <span className="font-mono font-bold">{form.quantity} × {form.ticker}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">@ Price</span>
+                <span className="font-mono">{formatCurrency(parseFloat(form.price || "0"))}</span>
+              </div>
+              <div className="flex justify-between border-t border-border/30 pt-1 mt-1">
+                <span className="text-muted-foreground">Total</span>
+                <span className="font-mono font-bold">{formatCurrency(totalValue)}</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1" onClick={() => setConfirmOpen(false)}>Cancel</Button>
+            <Button
+              className={`flex-1 ${isShortMode ? "bg-orange-500 hover:bg-orange-600 text-white" : ""}`}
+              onClick={() => { setConfirmOpen(false); executeTrade(); }}
+              disabled={tradeMutation.isPending}
+            >
+              {tradeMutation.isPending ? "Executing..." : "Confirm Trade"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </form>
   );
 }
