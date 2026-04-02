@@ -103,12 +103,13 @@ describe("auth.register", () => {
 describe("auth.login", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("rejects unknown email", async () => {
+  it("rejects unknown email and username", async () => {
     vi.mocked(db.getUserByEmail).mockResolvedValue(undefined);
+    vi.mocked(db.getUserByUsername).mockResolvedValue(undefined);
     const caller = appRouter.createCaller(makeCtx());
     await expect(
       caller.auth.login({ email: "nobody@example.com", passcode: "1234" })
-    ).rejects.toThrow("Invalid email or passcode");
+    ).rejects.toThrow("Invalid email/username or passcode");
   });
 
   it("rejects wrong passcode", async () => {
@@ -117,6 +118,15 @@ describe("auth.login", () => {
     const caller = appRouter.createCaller(makeCtx());
     await expect(
       caller.auth.login({ email: "test@example.com", passcode: "badpass" })
+    ).rejects.toThrow("Invalid email or passcode");
+  });
+
+  it("falls back to username lookup when email not found", async () => {
+    vi.mocked(db.getUserByEmail).mockResolvedValue(undefined);
+    vi.mocked(db.getUserByUsername).mockResolvedValue(makeUser({ passcodeHash: "wronghash" }));
+    const caller = appRouter.createCaller(makeCtx());
+    await expect(
+      caller.auth.login({ email: "testuser", passcode: "badpass" })
     ).rejects.toThrow("Invalid email or passcode");
   });
 });

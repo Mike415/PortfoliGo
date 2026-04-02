@@ -93,13 +93,13 @@ export default function Login() {
                   className="space-y-4"
                 >
                   <div className="space-y-2">
-                    <Label htmlFor="login-email">Email</Label>
+                    <Label htmlFor="login-email">Email or Username</Label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <Input
                         id="login-email"
-                        type="email"
-                        placeholder="you@example.com"
+                        type="text"
+                        placeholder="you@example.com or your username"
                         className="pl-9"
                         value={loginForm.email}
                         onChange={(e) => setLoginForm((f) => ({ ...f, email: e.target.value }))}

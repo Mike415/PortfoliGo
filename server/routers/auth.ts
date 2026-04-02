@@ -82,18 +82,23 @@ export const authRouter = router({
       return { success: true, user: { id: user.id, username: user.username, displayName: user.displayName, role: user.role, email: user.email ?? null } };
     }),
 
-  // Login with email + passcode
+  // Login with email OR username + passcode
   login: publicProcedure
     .input(
       z.object({
-        email: z.string().min(1, "Email is required"),
+        email: z.string().min(1, "Email or username is required"),
         passcode: z.string(),
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const user = await db.getUserByEmail(input.email.toLowerCase().trim());
+      const identifier = input.email.trim();
+      // Try email first, then fall back to username (for legacy accounts)
+      let user = await db.getUserByEmail(identifier.toLowerCase());
       if (!user) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or passcode" });
+        user = await db.getUserByUsername(identifier);
+      }
+      if (!user) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email/username or passcode" });
       }
 
       const passcodeHash = hashPasscode(input.passcode);
