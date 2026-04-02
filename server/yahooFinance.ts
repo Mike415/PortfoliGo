@@ -4,6 +4,13 @@
  * Uses query2.finance.yahoo.com which serves public market data without
  * requiring cookie/crumb authentication. Falls back to query1 if query2
  * returns a non-200 status.
+ *
+ * Extended hours strategy:
+ *   The /v8/finance/chart endpoint with interval=1m&includePrePost=true returns
+ *   intraday candles including pre-market and post-market bars. We derive the
+ *   current price from the last non-null close in the series and compare its
+ *   timestamp against the currentTradingPeriod boundaries to determine whether
+ *   it is a regular, pre-market, or post-market price.
  */
 
 import axios, { AxiosInstance } from "axios";
@@ -121,15 +128,47 @@ async function fetchSearch(query: string, limit: number): Promise<any> {
   return null;
 }
 
+/**
+ * Determine price source and market state from the last candle timestamp
+ * relative to the trading period boundaries returned by Yahoo Finance.
+ *
+ * currentTradingPeriod contains { pre: { start, end }, regular: { start, end }, post: { start, end } }
+ * All values are Unix seconds.
+ */
+function classifyPriceSource(
+  lastTimestampSec: number,
+  tradingPeriod: Record<string, { start: number; end: number }> | undefined
+): { priceSource: PriceSource; marketState: MarketState } {
+  if (!tradingPeriod) return { priceSource: "regular", marketState: "CLOSED" };
+
+  const pre = tradingPeriod.pre;
+  const regular = tradingPeriod.regular;
+  const post = tradingPeriod.post;
+
+  if (regular && lastTimestampSec >= regular.start && lastTimestampSec < regular.end) {
+    return { priceSource: "regular", marketState: "REGULAR" };
+  }
+  if (pre && lastTimestampSec >= pre.start && lastTimestampSec < pre.end) {
+    return { priceSource: "pre", marketState: "PRE" };
+  }
+  if (post && lastTimestampSec >= post.start && lastTimestampSec < post.end) {
+    return { priceSource: "post", marketState: "POST" };
+  }
+  // Outside all periods — use regular price, mark as CLOSED
+  return { priceSource: "regular", marketState: "CLOSED" };
+}
+
 // ── Core API calls ───────────────────────────────────────────────────────────
 
 /**
  * Fetch a real-time quote for a single ticker.
+ * Uses 1-minute bars with includePrePost=true to capture extended hours prices.
  */
 export async function getQuote(ticker: string): Promise<QuoteResult> {
   const data = await fetchChart(`/v8/finance/chart/${encodeURIComponent(ticker)}`, {
-    interval: "1d",
-    range: "5d",
+    interval: "1m",
+    range: "1d",
+    includePrePost: "true",
   });
 
   const chartResult = data?.chart?.result?.[0];
@@ -140,34 +179,28 @@ export async function getQuote(ticker: string): Promise<QuoteResult> {
   const meta = chartResult.meta ?? {};
   const regularPrice: number = meta.regularMarketPrice ?? meta.chartPreviousClose ?? 0;
   const previousClose: number = meta.chartPreviousClose ?? meta.previousClose ?? regularPrice;
-  const marketState: MarketState = (meta.marketState as MarketState) ?? "CLOSED";
 
-  // Use the most recent extended hours price when it exists and is valid.
-  // Yahoo Finance returns preMarketPrice / postMarketPrice alongside the regular price.
-  const preMarketPrice: number | undefined = meta.preMarketPrice;
-  const postMarketPrice: number | undefined = meta.postMarketPrice;
+  // Extract last non-null close from the 1m candle series
+  const timestamps: number[] = chartResult.timestamp ?? [];
+  const closes: (number | null)[] = chartResult.indicators?.quote?.[0]?.close ?? [];
 
-  let price = regularPrice;
-  let priceSource: PriceSource = "regular";
-
-  if (marketState === "PRE" || marketState === "PREPRE") {
-    // Before market open — use pre-market price if available
-    if (preMarketPrice && preMarketPrice > 0) {
-      price = preMarketPrice;
-      priceSource = "pre";
-    }
-  } else if (marketState === "POST" || marketState === "POSTPOST" || marketState === "CLOSED") {
-    // After market close — prefer post-market price if available and more recent
-    if (postMarketPrice && postMarketPrice > 0) {
-      price = postMarketPrice;
-      priceSource = "post";
-    } else if (preMarketPrice && preMarketPrice > 0 && marketState === "CLOSED") {
-      // Edge case: only pre-market data available (very early morning)
-      price = preMarketPrice;
-      priceSource = "pre";
+  // Walk backwards to find the last valid (non-null) close and its timestamp
+  let lastPrice: number | null = null;
+  let lastTimestampSec = 0;
+  for (let i = closes.length - 1; i >= 0; i--) {
+    if (closes[i] != null && closes[i]! > 0) {
+      lastPrice = closes[i]!;
+      lastTimestampSec = timestamps[i] ?? 0;
+      break;
     }
   }
-  // marketState === "REGULAR": use regularPrice as-is (priceSource stays "regular")
+
+  // Classify the price source based on when the last candle falls
+  const tradingPeriod = meta.currentTradingPeriod as Record<string, { start: number; end: number }> | undefined;
+  const { priceSource, marketState } = classifyPriceSource(lastTimestampSec, tradingPeriod);
+
+  // Use the last candle price if we got one; otherwise fall back to regularMarketPrice
+  const price = lastPrice ?? regularPrice;
 
   const change = price - previousClose;
   const changePct = previousClose !== 0 ? (change / previousClose) * 100 : 0;

@@ -246,3 +246,6 @@
 - [x] Backend: store shortName/longName from Yahoo Finance quote in price_cache (already done)
 - [x] Backend: return companyName alongside positions in getSleeveById and getSleeve
 - [x] Frontend: show company name below ticker on each position row
+
+## After-Hours Price Debug (Round 28)
+- [x] Fix: after-hours prices not showing — v8/chart 1d endpoint doesn't return marketState/postMarketPrice; switched to 1m+includePrePost=true and classify price source from last candle timestamp vs currentTradingPeriod boundaries
