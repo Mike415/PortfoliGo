@@ -275,3 +275,6 @@
 - [x] Frontend: add email field to JoinGroup.tsx inline registration
 - [x] Frontend: show "Complete your profile" email prompt after login if user.email is null (EmailMigrationPrompt.tsx)
 - [x] Frontend: email prompt dismissible with localStorage flag to avoid re-showing on every page load
+
+## Max Button Enhancement (Round 31)
+- [x] Fix: Max button now works for all sides — buy/cover (Max based on cash), sell (All held qty), short (Max based on cash)

@@ -51,7 +51,7 @@ export default function SleeveManager() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
   const [tradeOpen, setTradeOpen] = useState(false);
-  const [prefillPosition, setPrefillPosition] = useState<null | { ticker: string; assetType: AssetType; price: number; isShort: boolean }>(null);
+  const [prefillPosition, setPrefillPosition] = useState<null | { ticker: string; assetType: AssetType; price: number; isShort: boolean; quantity?: number }>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   // Load the sleeve by its ID (any member can view any sleeve)
@@ -94,6 +94,7 @@ export default function SleeveManager() {
       assetType: pos.assetType as AssetType,
       price: pos.currentPrice,
       isShort: pos.isShort,
+      quantity: pos.quantity,
     });
     setTradeOpen(true);
   };
@@ -686,7 +687,7 @@ function TradeForm({
   groupId: number;
   cashBalance: number;
   sleeveValue: number;
-  prefill: null | { ticker: string; assetType: AssetType; price: number; isShort: boolean };
+  prefill: null | { ticker: string; assetType: AssetType; price: number; isShort: boolean; quantity?: number };
   onSuccess: () => void;
 }) {
   const [form, setForm] = useState({
@@ -839,18 +840,31 @@ function TradeForm({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label>Quantity</Label>
-            {form.price && parseFloat(form.price) > 0 && (form.side === "buy" || form.side === "cover") && (
-              <button
-                type="button"
-                className="text-xs text-primary hover:text-primary/80 font-medium transition-colors cursor-pointer"
-                onClick={() => {
-                  const maxQty = Math.floor(cashBalance / parseFloat(form.price));
-                  if (maxQty > 0) setForm((f) => ({ ...f, quantity: String(maxQty) }));
-                }}
-              >
-                Max ({Math.floor(cashBalance / parseFloat(form.price)).toLocaleString()})
-              </button>
-            )}
+            {form.price && parseFloat(form.price) > 0 && (() => {
+              const price = parseFloat(form.price);
+              let maxQty = 0;
+              let label = "";
+              if (form.side === "buy" || form.side === "cover") {
+                maxQty = Math.floor(cashBalance / price);
+                label = `Max (${maxQty.toLocaleString()})`;
+              } else if (form.side === "sell") {
+                maxQty = prefill?.quantity ?? 0;
+                label = `All (${maxQty.toLocaleString()})`;
+              } else if (form.side === "short") {
+                maxQty = Math.floor(cashBalance / price);
+                label = `Max (${maxQty.toLocaleString()})`;
+              }
+              if (maxQty <= 0) return null;
+              return (
+                <button
+                  type="button"
+                  className="text-xs text-primary hover:text-primary/80 font-medium transition-colors cursor-pointer"
+                  onClick={() => setForm((f) => ({ ...f, quantity: String(maxQty) }))}
+                >
+                  {label}
+                </button>
+              );
+            })()}
           </div>
           <Input
             type="number"
