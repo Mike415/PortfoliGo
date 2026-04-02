@@ -1,29 +1,23 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Mail } from "lucide-react";
 import { toast } from "sonner";
 
-const DISMISSED_KEY = "portfoligo_email_prompt_dismissed";
-
+/**
+ * Persistent bottom banner shown to users who signed up before email was required.
+ * It cannot be dismissed — it disappears only when a valid email is saved.
+ * Users whose email ends with "@portfoligo.local" are treated as missing an email.
+ */
 export function EmailMigrationPrompt() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, refresh } = useAuth();
   const utils = trpc.useUtils();
 
-  // Only show if authenticated, email is missing, and user hasn't dismissed
-  const isDismissed = localStorage.getItem(DISMISSED_KEY) === "true";
-  const shouldShow = isAuthenticated && user && !user.email && !isDismissed;
+  const isPlaceholder = user?.email?.endsWith("@portfoligo.local");
+  const shouldShow = isAuthenticated && user && (!user.email || isPlaceholder);
 
-  const [open, setOpen] = useState(!!shouldShow);
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
 
@@ -31,17 +25,12 @@ export function EmailMigrationPrompt() {
     onSuccess: () => {
       toast.success("Email saved — thanks!");
       utils.auth.me.invalidate();
-      setOpen(false);
+      refresh?.();
     },
     onError: (err) => {
       setError(err.message);
     },
   });
-
-  function handleDismiss() {
-    localStorage.setItem(DISMISSED_KEY, "true");
-    setOpen(false);
-  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -53,47 +42,39 @@ export function EmailMigrationPrompt() {
   if (!shouldShow) return null;
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) handleDismiss(); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Add your email</DialogTitle>
-          <DialogDescription>
-            Add an email address to your account for future account recovery. This is optional — you can always skip it.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-          <div className="space-y-2">
-            <Label htmlFor="migration-email">Email address</Label>
-            <Input
-              id="migration-email"
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => { setEmail(e.target.value); setError(""); }}
-              autoFocus
-              autoComplete="email"
-            />
-            {error && <p className="text-xs text-destructive">{error}</p>}
+    <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border/60 bg-card/95 backdrop-blur-md shadow-lg">
+      <div className="max-w-2xl mx-auto px-4 py-3">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          <div className="flex items-center gap-2 shrink-0">
+            <Mail className="w-4 h-4 text-primary" />
+            <span className="text-sm font-medium text-foreground">Add your email</span>
           </div>
-          <div className="flex gap-2">
+          <p className="text-xs text-muted-foreground sm:flex-1">
+            Required for account recovery. Your email is never shared.
+          </p>
+          <form onSubmit={handleSubmit} className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="flex-1 sm:w-64">
+              <Input
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); setError(""); }}
+                className={`h-8 text-sm ${error ? "border-destructive" : ""}`}
+                autoComplete="email"
+              />
+              {error && <p className="text-xs text-destructive mt-1">{error}</p>}
+            </div>
             <Button
               type="submit"
-              className="flex-1"
+              size="sm"
+              className="h-8 shrink-0"
               disabled={!email.trim() || updateEmail.isPending}
             >
-              {updateEmail.isPending ? "Saving..." : "Save Email"}
+              {updateEmail.isPending ? "Saving..." : "Save"}
             </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={handleDismiss}
-              className="flex-1"
-            >
-              Skip for now
-            </Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
+          </form>
+        </div>
+      </div>
+    </div>
   );
 }

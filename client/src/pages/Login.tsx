@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { TrendingUp, Lock, User, Eye, EyeOff } from "lucide-react";
+import { TrendingUp, Lock, User, Mail, Eye, EyeOff } from "lucide-react";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -17,8 +17,9 @@ export default function Login() {
   const utils = trpc.useUtils();
 
   // Login form state
-  const [loginForm, setLoginForm] = useState({ username: "", passcode: "" });
-  const [registerForm, setRegisterForm] = useState({ username: "", passcode: "", displayName: "", email: "" });
+  const [loginForm, setLoginForm] = useState({ email: "", passcode: "" });
+  // Register form state — email, displayName, passcode (no username)
+  const [registerForm, setRegisterForm] = useState({ email: "", displayName: "", passcode: "" });
 
   const loginMutation = trpc.auth.login.useMutation({
     onSuccess: () => {
@@ -38,7 +39,6 @@ export default function Login() {
       setLocation(nextPath);
     },
     onError: (err) => {
-      // tRPC wraps Zod validation errors as a JSON array string — extract the first human message
       let msg = err.message;
       try {
         const parsed = JSON.parse(msg);
@@ -93,16 +93,17 @@ export default function Login() {
                   className="space-y-4"
                 >
                   <div className="space-y-2">
-                    <Label htmlFor="login-username">Username</Label>
+                    <Label htmlFor="login-email">Email</Label>
                     <div className="relative">
-                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <Input
-                        id="login-username"
-                        placeholder="your-username"
+                        id="login-email"
+                        type="email"
+                        placeholder="you@example.com"
                         className="pl-9"
-                        value={loginForm.username}
-                        onChange={(e) => setLoginForm((f) => ({ ...f, username: e.target.value }))}
-                        autoComplete="username"
+                        value={loginForm.email}
+                        onChange={(e) => setLoginForm((f) => ({ ...f, email: e.target.value }))}
+                        autoComplete="email"
                       />
                     </div>
                   </div>
@@ -131,7 +132,7 @@ export default function Login() {
                   <Button
                     type="submit"
                     className="w-full"
-                    disabled={loginMutation.isPending || !loginForm.username || !loginForm.passcode}
+                    disabled={loginMutation.isPending || !loginForm.email || !loginForm.passcode}
                   >
                     {loginMutation.isPending ? "Signing in..." : "Sign In"}
                   </Button>
@@ -143,38 +144,14 @@ export default function Login() {
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
-                    registerMutation.mutate({ ...registerForm, email: registerForm.email || undefined });
+                    registerMutation.mutate(registerForm);
                   }}
                   className="space-y-4"
                 >
                   <div className="space-y-2">
-                    <Label htmlFor="reg-username">Username</Label>
+                    <Label htmlFor="reg-email">Email</Label>
                     <div className="relative">
-                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input
-                        id="reg-username"
-                        placeholder="pick-a-username"
-                        className="pl-9"
-                        value={registerForm.username}
-                        onChange={(e) => setRegisterForm((f) => ({ ...f, username: e.target.value }))}
-                        autoComplete="username"
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground">Letters, numbers, spaces, underscores, and hyphens</p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="reg-displayname">Display Name (optional)</Label>
-                    <Input
-                      id="reg-displayname"
-                      placeholder="Your Name"
-                      value={registerForm.displayName}
-                      onChange={(e) => setRegisterForm((f) => ({ ...f, displayName: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="reg-email">Email <span className="text-muted-foreground text-xs">(optional — for account recovery)</span></Label>
-                    <div className="relative">
-                      <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <Input
                         id="reg-email"
                         type="email"
@@ -183,6 +160,21 @@ export default function Login() {
                         value={registerForm.email}
                         onChange={(e) => setRegisterForm((f) => ({ ...f, email: e.target.value }))}
                         autoComplete="email"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="reg-displayname">Display Name</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        id="reg-displayname"
+                        placeholder="How you appear on the leaderboard"
+                        className="pl-9"
+                        value={registerForm.displayName}
+                        onChange={(e) => setRegisterForm((f) => ({ ...f, displayName: e.target.value }))}
+                        required
                       />
                     </div>
                   </div>
@@ -211,7 +203,7 @@ export default function Login() {
                   <Button
                     type="submit"
                     className="w-full"
-                    disabled={registerMutation.isPending || !registerForm.username || !registerForm.passcode}
+                    disabled={registerMutation.isPending || !registerForm.email || !registerForm.displayName || !registerForm.passcode}
                   >
                     {registerMutation.isPending ? "Creating account..." : "Create Account"}
                   </Button>

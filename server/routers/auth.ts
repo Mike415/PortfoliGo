@@ -16,6 +16,12 @@ function generateSessionId(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
+/** Derive a unique internal username from an email address */
+function usernameFromEmail(email: string): string {
+  // Take the local part, strip non-alphanumeric, lowercase, max 32 chars
+  return email.split("@")[0].replace(/[^a-zA-Z0-9_-]/g, "").toLowerCase().slice(0, 32) || "user";
+}
+
 export const authRouter = router({
   // Get current user
   me: publicProcedure.query((opts) => {
@@ -24,39 +30,40 @@ export const authRouter = router({
     return { id, username, displayName, role, email: email ?? null };
   }),
 
-  // Register a new user
+  // Register a new user — email + displayName + passcode (no username field for users)
   register: publicProcedure
     .input(
       z.object({
-        username: z.string().min(3).max(32)
-          .transform((v) => v.trim())
-          .pipe(z.string().min(3).max(32).regex(/^[a-zA-Z0-9_ -]+$/, "Username can only contain letters, numbers, spaces, underscores, and hyphens")),
+        email: z.string().email("Please enter a valid email address"),
+        displayName: z.string().min(1, "Display name is required").max(64).transform((v) => v.trim()).pipe(z.string().min(1, "Display name is required").max(64)),
         passcode: z.string().min(4).max(64),
-        displayName: z.string().max(64).optional(),
-        email: z.string().email("Please enter a valid email address").optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const existing = await db.getUserByUsername(input.username.toLowerCase());
-      if (existing) {
-        throw new TRPCError({ code: "CONFLICT", message: "Username already taken" });
+      const emailLower = input.email.toLowerCase().trim();
+
+      // Check email uniqueness
+      const emailExists = await db.getUserByEmail(emailLower);
+      if (emailExists) {
+        throw new TRPCError({ code: "CONFLICT", message: "An account with this email already exists" });
       }
 
-      // Check email uniqueness if provided
-      if (input.email) {
-        const emailExists = await db.getUserByEmail(input.email);
-        if (emailExists) {
-          throw new TRPCError({ code: "CONFLICT", message: "An account with this email already exists" });
-        }
+      // Generate a unique internal username from the email
+      let baseUsername = usernameFromEmail(emailLower);
+      let username = baseUsername;
+      let attempt = 0;
+      while (await db.getUserByUsername(username)) {
+        attempt++;
+        username = `${baseUsername}${attempt}`;
       }
 
       const passcodeHash = hashPasscode(input.passcode);
       const user = await db.createUser({
-        username: input.username.toLowerCase(),
+        username,
         passcodeHash,
-        displayName: input.displayName || input.username,
+        displayName: input.displayName,
         role: "user",
-        email: input.email ? input.email.toLowerCase().trim() : undefined,
+        email: emailLower,
       });
 
       if (!user) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to create user" });
@@ -75,23 +82,23 @@ export const authRouter = router({
       return { success: true, user: { id: user.id, username: user.username, displayName: user.displayName, role: user.role, email: user.email ?? null } };
     }),
 
-  // Login with username + passcode
+  // Login with email + passcode
   login: publicProcedure
     .input(
       z.object({
-        username: z.string(),
+        email: z.string().min(1, "Email is required"),
         passcode: z.string(),
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const user = await db.getUserByUsername(input.username.toLowerCase());
+      const user = await db.getUserByEmail(input.email.toLowerCase().trim());
       if (!user) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid username or passcode" });
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or passcode" });
       }
 
       const passcodeHash = hashPasscode(input.passcode);
       if (user.passcodeHash !== passcodeHash) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid username or passcode" });
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or passcode" });
       }
 
       await db.updateUserLastSignedIn(user.id);
@@ -117,12 +124,13 @@ export const authRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      const emailLower = input.email.toLowerCase().trim();
       // Check uniqueness
-      const existing = await db.getUserByEmail(input.email);
+      const existing = await db.getUserByEmail(emailLower);
       if (existing && existing.id !== ctx.user.id) {
         throw new TRPCError({ code: "CONFLICT", message: "An account with this email already exists" });
       }
-      await db.updateUserEmail(ctx.user.id, input.email);
+      await db.updateUserEmail(ctx.user.id, emailLower);
       return { success: true };
     }),
 

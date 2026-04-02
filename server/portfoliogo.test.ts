@@ -5,6 +5,7 @@ import type { TrpcContext } from "./_core/context";
 // ─── Mock db module ───────────────────────────────────────────────────────────
 vi.mock("./db", () => ({
   getUserByUsername: vi.fn(),
+  getUserByEmail: vi.fn(),
   getUserById: vi.fn(),
   createUser: vi.fn(),
   updateUserLastSignedIn: vi.fn(),
@@ -74,22 +75,23 @@ function makeUser(overrides = {}) {
 describe("auth.register", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("rejects duplicate username", async () => {
-    vi.mocked(db.getUserByUsername).mockResolvedValue(makeUser());
+  it("rejects duplicate email", async () => {
+    vi.mocked(db.getUserByEmail).mockResolvedValue(makeUser());
     const caller = appRouter.createCaller(makeCtx());
     await expect(
-      caller.auth.register({ username: "testuser", passcode: "1234" })
-    ).rejects.toThrow("Username already taken");
+      caller.auth.register({ email: "test@example.com", displayName: "Test", passcode: "1234" })
+    ).rejects.toThrow("An account with this email already exists");
   });
 
   it("creates a new user and session on success", async () => {
+    vi.mocked(db.getUserByEmail).mockResolvedValue(undefined);
     vi.mocked(db.getUserByUsername).mockResolvedValue(undefined);
     vi.mocked(db.createUser).mockResolvedValue(makeUser({ id: 42 }));
     vi.mocked(db.createSession).mockResolvedValue(undefined);
 
     const ctx = makeCtx();
     const caller = appRouter.createCaller(ctx);
-    const result = await caller.auth.register({ username: "newuser", passcode: "abcd" });
+    const result = await caller.auth.register({ email: "new@example.com", displayName: "New User", passcode: "abcd" });
 
     expect(result.success).toBe(true);
     expect(result.user.username).toBe("testuser");
@@ -101,21 +103,21 @@ describe("auth.register", () => {
 describe("auth.login", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("rejects unknown username", async () => {
-    vi.mocked(db.getUserByUsername).mockResolvedValue(undefined);
+  it("rejects unknown email", async () => {
+    vi.mocked(db.getUserByEmail).mockResolvedValue(undefined);
     const caller = appRouter.createCaller(makeCtx());
     await expect(
-      caller.auth.login({ username: "nobody", passcode: "1234" })
-    ).rejects.toThrow("Invalid username or passcode");
+      caller.auth.login({ email: "nobody@example.com", passcode: "1234" })
+    ).rejects.toThrow("Invalid email or passcode");
   });
 
   it("rejects wrong passcode", async () => {
     // Hash won't match a random string
-    vi.mocked(db.getUserByUsername).mockResolvedValue(makeUser({ passcodeHash: "wronghash" }));
+    vi.mocked(db.getUserByEmail).mockResolvedValue(makeUser({ passcodeHash: "wronghash" }));
     const caller = appRouter.createCaller(makeCtx());
     await expect(
-      caller.auth.login({ username: "testuser", passcode: "badpass" })
-    ).rejects.toThrow("Invalid username or passcode");
+      caller.auth.login({ email: "test@example.com", passcode: "badpass" })
+    ).rejects.toThrow("Invalid email or passcode");
   });
 });
 

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Users, TrendingUp, Lock, User, Eye, EyeOff, CheckCircle2, AlertCircle } from "lucide-react";
+import { ArrowLeft, Users, TrendingUp, Lock, User, Mail, Eye, EyeOff, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
 function formatCurrency(val: string | number) {
@@ -33,7 +33,6 @@ export default function JoinGroup() {
 
   const [inviteCode, setInviteCode] = useState(params.code?.toUpperCase() ?? "");
   const [confirmedCode, setConfirmedCode] = useState(params.code?.toUpperCase() ?? "");
-  const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [passcode, setPasscode] = useState("");
   const [email, setEmail] = useState("");
@@ -71,7 +70,7 @@ export default function JoinGroup() {
     e.preventDefault();
     if (!previewQuery.data) return;
     try {
-      await registerMutation.mutateAsync({ username, displayName, passcode, email: email || undefined });
+      await registerMutation.mutateAsync({ email, displayName, passcode });
       await joinMutation.mutateAsync({ inviteCode: confirmedCode });
     } catch (err: any) {
       // Parse Zod JSON validation errors into a friendly message
@@ -231,36 +230,9 @@ export default function JoinGroup() {
                       </p>
                       <form onSubmit={handleRegisterAndJoin} className="space-y-3">
                         <div className="space-y-1">
-                          <Label htmlFor="jg-username">Username</Label>
+                          <Label htmlFor="jg-email">Email</Label>
                           <div className="relative">
-                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                            <Input
-                              id="jg-username"
-                              placeholder="pick-a-username"
-                              className="pl-9"
-                              value={username}
-                              onChange={(e) => setUsername(e.target.value)}
-                              autoComplete="username"
-                              required
-                            />
-                          </div>
-                          <p className="text-xs text-muted-foreground">Letters, numbers, spaces, underscores, hyphens</p>
-                        </div>
-                        <div className="space-y-1">
-                          <Label htmlFor="jg-displayname">
-                            Display Name <span className="text-muted-foreground">(optional)</span>
-                          </Label>
-                          <Input
-                            id="jg-displayname"
-                            placeholder="Your Name"
-                            value={displayName}
-                            onChange={(e) => setDisplayName(e.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label htmlFor="jg-email">Email <span className="text-muted-foreground">(optional — for account recovery)</span></Label>
-                          <div className="relative">
-                            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                             <Input
                               id="jg-email"
                               type="email"
@@ -269,6 +241,21 @@ export default function JoinGroup() {
                               value={email}
                               onChange={(e) => setEmail(e.target.value)}
                               autoComplete="email"
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="jg-displayname">Display Name</Label>
+                          <div className="relative">
+                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                            <Input
+                              id="jg-displayname"
+                              placeholder="How you appear on the leaderboard"
+                              className="pl-9"
+                              value={displayName}
+                              onChange={(e) => setDisplayName(e.target.value)}
+                              required
                             />
                           </div>
                         </div>
@@ -300,7 +287,7 @@ export default function JoinGroup() {
                         <Button
                           type="submit"
                           className="w-full"
-                          disabled={group.isFull || isBusy || !username || !passcode}
+                          disabled={group.isFull || isBusy || !email || !displayName || !passcode}
                         >
                           {isBusy ? "Setting up your account..." : `Create Account & Join ${group.name}`}
                         </Button>

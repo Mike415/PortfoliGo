@@ -14,12 +14,12 @@ export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
   username: varchar("username", { length: 64 }).notNull().unique(),
   passcodeHash: varchar("passcodeHash", { length: 255 }).notNull(),
-  displayName: varchar("displayName", { length: 128 }),
+  displayName: varchar("displayName", { length: 128 }).notNull().default(""),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
-  email: varchar("email", { length: 255 }),
+  email: varchar("email", { length: 255 }).notNull().unique(),
 });
 
 export type User = typeof users.$inferSelect;
