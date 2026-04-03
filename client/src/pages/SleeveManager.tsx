@@ -17,7 +17,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Line, ComposedChart, ReferenceLine,
 } from "recharts";
 import {
   ArrowLeft, Plus, RefreshCw, TrendingUp, Wallet, Clock,
@@ -41,6 +41,10 @@ const equityChartConfig: ChartConfig = {
   totalValue: {
     label: "Portfolio Value",
     color: "oklch(0.65 0.18 250)",
+  },
+  spxReturn: {
+    label: "S\u0026P 500",
+    color: "oklch(0.72 0.15 145)",
   },
 };
 
@@ -68,6 +72,16 @@ export default function SleeveManager() {
   const { data: snapshots } = trpc.portfolio.getSnapshots.useQuery(
     { groupId: gId, limit: 90, sleeveId: sId || undefined },
     { enabled: !!gId && !!sId }
+  );
+
+  // Derive ISO date strings from snapshots for benchmark alignment
+  const snapshotDates = snapshots && snapshots.length > 1
+    ? snapshots.map((s) => new Date(s.snapshotAt).toISOString().slice(0, 10))
+    : [];
+
+  const { data: benchmark } = trpc.portfolio.getBenchmark.useQuery(
+    { groupId: gId, dates: snapshotDates },
+    { enabled: !!gId && snapshotDates.length > 1 }
   );
 
   const refreshMutation = trpc.portfolio.refreshPrices.useMutation({
@@ -165,13 +179,32 @@ export default function SleeveManager() {
   const totalPnl = sleeve.realizedPnl + sleeve.unrealizedPnl;
   const isOwner = sleeve.isOwner;
 
-  // Prepare chart data
+  // Prepare chart data — merge portfolio snapshots with S&P 500 benchmark returns
+  const benchmarkByDate = new Map<string, number | null>(
+    (benchmark ?? []).map((b) => [b.date, b.spxReturn])
+  );
+
   const chartData = snapshots && snapshots.length > 0
-    ? snapshots.map((s) => ({
-        date: new Date(s.snapshotAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-        totalValue: parseFloat(String(s.totalValue)),
-      }))
-    : [{ date: "Now", totalValue: sleeve.totalValue }];
+    ? snapshots.map((s) => {
+        const isoDate = new Date(s.snapshotAt).toISOString().slice(0, 10);
+        return {
+          date: new Date(s.snapshotAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+          isoDate,
+          totalValue: parseFloat(String(s.totalValue)),
+          spxReturn: benchmarkByDate.get(isoDate) ?? null,
+        };
+      })
+    : [{ date: "Now", isoDate: "", totalValue: sleeve.totalValue, spxReturn: null }];
+
+  // Portfolio return % from first snapshot (for right axis alignment with S&P)
+  const firstValue = chartData.length > 1 ? chartData[0].totalValue : sleeve.allocatedCapital;
+
+  const chartDataWithReturn = chartData.map((d) => ({
+    ...d,
+    portfolioReturn: firstValue > 0 ? ((d.totalValue - firstValue) / firstValue) * 100 : 0,
+  }));
+
+  const hasBenchmark = chartDataWithReturn.some((d) => d.spxReturn != null);
 
   const chartMin = chartData.length > 1
     ? Math.min(...chartData.map((d) => d.totalValue)) * 0.995
@@ -343,52 +376,108 @@ export default function SleeveManager() {
                 Refresh prices to start recording your equity curve
               </div>
             ) : (
-              <ChartContainer config={equityChartConfig} className="h-[180px] w-full">
-                <AreaChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="oklch(0.65 0.18 250)" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="oklch(0.65 0.18 250)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border) / 0.3)" />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fontSize: 10 }}
-                    tickLine={false}
-                    axisLine={false}
-                    interval="preserveStartEnd"
-                  />
-                  <YAxis
-                    domain={[chartMin, chartMax]}
-                    tick={{ fontSize: 10 }}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
-                    width={48}
-                  />
-                  <ChartTooltip
-                    content={
-                      <ChartTooltipContent
-                        formatter={(value) => [
-                          <span key="val" className="font-mono font-bold">{formatCurrency(Number(value))}</span>,
-                          "Value",
-                        ]}
-                        labelFormatter={(label) => label}
+              <>
+                {/* Legend */}
+                <div className="flex items-center gap-4 px-4 pb-2">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-0.5 rounded-full bg-[oklch(0.65_0.18_250)]" />
+                    <span className="text-xs text-muted-foreground">My Portfolio</span>
+                  </div>
+                  {hasBenchmark && (
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-0.5 rounded-full bg-[oklch(0.72_0.15_145)] opacity-70" style={{ borderTop: '2px dashed oklch(0.72 0.15 145)' }} />
+                      <span className="text-xs text-muted-foreground">S&amp;P 500</span>
+                    </div>
+                  )}
+                </div>
+                <ChartContainer config={equityChartConfig} className="h-[200px] w-full">
+                  <ComposedChart data={chartDataWithReturn} margin={{ top: 4, right: hasBenchmark ? 44 : 8, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="oklch(0.65 0.18 250)" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="oklch(0.65 0.18 250)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border) / 0.3)" />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 10 }}
+                      tickLine={false}
+                      axisLine={false}
+                      interval="preserveStartEnd"
+                    />
+                    {/* Left axis: portfolio dollar value */}
+                    <YAxis
+                      yAxisId="left"
+                      domain={[chartMin, chartMax]}
+                      tick={{ fontSize: 10 }}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                      width={48}
+                    />
+                    {/* Right axis: % return (portfolio + S&P aligned) */}
+                    {hasBenchmark && (
+                      <YAxis
+                        yAxisId="right"
+                        orientation="right"
+                        tick={{ fontSize: 10 }}
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`}
+                        width={44}
                       />
-                    }
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="totalValue"
-                    stroke="oklch(0.65 0.18 250)"
-                    strokeWidth={2}
-                    fill="url(#equityGradient)"
-                    dot={false}
-                    activeDot={{ r: 4, strokeWidth: 0 }}
-                  />
-                </AreaChart>
-              </ChartContainer>
+                    )}
+                    <ChartTooltip
+                      content={
+                        <ChartTooltipContent
+                          formatter={(value, name) => {
+                            if (name === "spxReturn") {
+                              const v = Number(value);
+                              return [
+                                <span key="spx" className="font-mono font-bold" style={{ color: "oklch(0.72 0.15 145)" }}>
+                                  {v >= 0 ? "+" : ""}{v.toFixed(2)}%
+                                </span>,
+                                "S&P 500",
+                              ];
+                            }
+                            return [
+                              <span key="val" className="font-mono font-bold">{formatCurrency(Number(value))}</span>,
+                              "Portfolio",
+                            ];
+                          }}
+                          labelFormatter={(label) => label}
+                        />
+                      }
+                    />
+                    {/* Portfolio area on left axis */}
+                    <Area
+                      yAxisId="left"
+                      type="monotone"
+                      dataKey="totalValue"
+                      stroke="oklch(0.65 0.18 250)"
+                      strokeWidth={2}
+                      fill="url(#equityGradient)"
+                      dot={false}
+                      activeDot={{ r: 4, strokeWidth: 0 }}
+                    />
+                    {/* S&P 500 line on right axis */}
+                    {hasBenchmark && (
+                      <Line
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="spxReturn"
+                        stroke="oklch(0.72 0.15 145)"
+                        strokeWidth={1.5}
+                        strokeDasharray="4 3"
+                        dot={false}
+                        activeDot={{ r: 3, strokeWidth: 0 }}
+                        connectNulls
+                      />
+                    )}
+                  </ComposedChart>
+                </ChartContainer>
+              </>
             )}
           </CardContent>
         </Card>

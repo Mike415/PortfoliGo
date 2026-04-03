@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import { z } from "zod";
-import { getQuote, type AssetType } from "../yahooFinance";
+import { getQuote, getHistory, type AssetType } from "../yahooFinance";
 
 async function fetchPrice(ticker: string, forceRefresh = false): Promise<{ price: number; assetType: AssetType; name: string | null; priceSource: "regular" | "pre" | "post" }> {
   const CACHE_TTL = 5 * 60 * 1000;
@@ -706,5 +706,69 @@ export const portfolioRouter = router({
       }
 
       return { success: true, sleeveCount: sleeves.length };
+    }),
+
+  /**
+   * Fetch S&P 500 (^GSPC) historical closes indexed to a base date so the
+   * benchmark can be overlaid on the portfolio equity curve as a % return.
+   *
+   * Returns an array of { date, returnPct } aligned to the snapshot dates
+   * provided by the caller. If a snapshot date falls on a weekend/holiday the
+   * nearest prior trading day is used.
+   */
+  getBenchmark: protectedProcedure
+    .input(
+      z.object({
+        groupId: z.number(),
+        /** ISO date strings of the snapshot dates we need to align to */
+        dates: z.array(z.string()).min(1).max(365),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      // Verify membership
+      const membership = await db.getGroupMembership(input.groupId, ctx.user.id);
+      if (!membership) throw new TRPCError({ code: "FORBIDDEN", message: "Not a member" });
+
+      // Fetch up to 1 year of daily S&P 500 closes from Yahoo Finance
+      const history = await getHistory("^GSPC", "1y", "1d");
+
+      // Build a map of date-string → close price (YYYY-MM-DD)
+      const priceByDate = new Map<string, number>();
+      for (let i = 0; i < history.timestamps.length; i++) {
+        const close = history.closes[i];
+        if (close == null || close <= 0) continue;
+        const d = new Date(history.timestamps[i]);
+        const key = d.toISOString().slice(0, 10);
+        priceByDate.set(key, close);
+      }
+
+      // Sort all available trading-day dates ascending
+      const tradingDays = Array.from(priceByDate.keys()).sort();
+
+      /** Find the closest prior (or equal) trading day for a given date string */
+      function closestPrior(dateStr: string): number | null {
+        // Binary search for the largest trading day <= dateStr
+        let lo = 0, hi = tradingDays.length - 1, best = -1;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          if (tradingDays[mid] <= dateStr) { best = mid; lo = mid + 1; }
+          else hi = mid - 1;
+        }
+        return best >= 0 ? (priceByDate.get(tradingDays[best]) ?? null) : null;
+      }
+
+      // Determine the base price from the earliest snapshot date
+      const sortedDates = [...input.dates].sort();
+      const basePrice = closestPrior(sortedDates[0]);
+      if (!basePrice) return [];
+
+      return input.dates.map((dateStr) => {
+        const price = closestPrior(dateStr);
+        if (price == null) return { date: dateStr, spxReturn: null };
+        return {
+          date: dateStr,
+          spxReturn: ((price - basePrice) / basePrice) * 100,
+        };
+      });
     }),
 });
