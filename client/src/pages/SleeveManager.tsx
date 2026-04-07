@@ -81,7 +81,12 @@ export default function SleeveManager() {
 
   const { data: benchmark } = trpc.portfolio.getBenchmark.useQuery(
     { groupId: gId, dates: snapshotDates },
-    { enabled: !!gId && snapshotDates.length > 1 }
+    {
+      enabled: !!gId && snapshotDates.length > 1,
+      // S&P data doesn't change intraday — cache on client for 1 hour
+      staleTime: 60 * 60 * 1000,
+      gcTime: 60 * 60 * 1000,
+    }
   );
 
   const refreshMutation = trpc.portfolio.refreshPrices.useMutation({

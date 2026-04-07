@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import { z } from "zod";
-import { getQuote, getHistory, type AssetType } from "../yahooFinance";
+import { getQuote, getSpxHistory, type AssetType } from "../yahooFinance";
 
 async function fetchPrice(ticker: string, forceRefresh = false): Promise<{ price: number; assetType: AssetType; name: string | null; priceSource: "regular" | "pre" | "post" }> {
   const CACHE_TTL = 5 * 60 * 1000;
@@ -729,8 +729,8 @@ export const portfolioRouter = router({
       const membership = await db.getGroupMembership(input.groupId, ctx.user.id);
       if (!membership) throw new TRPCError({ code: "FORBIDDEN", message: "Not a member" });
 
-      // Fetch up to 1 year of daily S&P 500 closes from Yahoo Finance
-      const history = await getHistory("^GSPC", "1y", "1d");
+      // Fetch up to 1 year of daily S&P 500 closes (server-cached for 1 hour)
+      const history = await getSpxHistory("1y", "1d");
 
       // Build a map of date-string → close price (YYYY-MM-DD)
       const priceByDate = new Map<string, number>();

@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import { createPool } from "mysql2";
 import {
   groups,
   groupMembers,
@@ -26,7 +27,16 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      // Use a bounded connection pool (max 5) to prevent connection accumulation
+      const pool = createPool({
+        uri: process.env.DATABASE_URL,
+        connectionLimit: parseInt(process.env.DB_POOL_MAX ?? "5", 10),
+        waitForConnections: true,
+        queueLimit: 0,
+        enableKeepAlive: true,
+        keepAliveInitialDelay: 30_000,
+      });
+      _db = drizzle(pool);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;

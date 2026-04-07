@@ -25,12 +25,34 @@ const USER_AGENT =
 
 const http: AxiosInstance = axios.create({
   timeout: 15_000,
+  // Cap response size at 2 MB to prevent runaway memory from large Yahoo payloads
+  maxContentLength: 2 * 1024 * 1024,
+  maxBodyLength: 2 * 1024 * 1024,
   headers: {
     "User-Agent": USER_AGENT,
     Accept: "application/json, text/plain, */*",
     "Accept-Language": "en-US,en;q=0.9",
   },
 });
+
+// ── S&P 500 history cache (server-side, 1-hour TTL) ─────────────────────────
+// Avoids re-fetching a full year of daily bars on every chart load.
+interface SpxCacheEntry {
+  data: HistoryResult;
+  expiresAt: number;
+}
+let _spxCache: SpxCacheEntry | null = null;
+const SPX_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+export async function getSpxHistory(range = "1y", interval = "1d"): Promise<HistoryResult> {
+  const now = Date.now();
+  if (_spxCache && now < _spxCache.expiresAt) {
+    return _spxCache.data;
+  }
+  const data = await getHistory("^GSPC", range, interval);
+  _spxCache = { data, expiresAt: now + SPX_CACHE_TTL };
+  return data;
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
