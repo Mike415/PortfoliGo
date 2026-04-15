@@ -55,7 +55,7 @@ export default function SleeveManager() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
   const [tradeOpen, setTradeOpen] = useState(false);
-  const [prefillPosition, setPrefillPosition] = useState<null | { ticker: string; assetType: AssetType; price: number; isShort: boolean; quantity?: number }>(null);
+  const [prefillPosition, setPrefillPosition] = useState<null | { ticker: string; assetType: AssetType; price: number; isShort: boolean; quantity?: number; defaultSide?: TradeSide }>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   // Load the sleeve by its ID (any member can view any sleeve)
@@ -108,12 +108,15 @@ export default function SleeveManager() {
 
   const handlePositionClick = (pos: any) => {
     if (!sleeve?.isOwner) return;
+    // Default to the closing side: sell for long positions, cover for short positions
+    const closingSide: TradeSide = pos.isShort ? "cover" : "sell";
     setPrefillPosition({
       ticker: pos.ticker,
       assetType: pos.assetType as AssetType,
       price: pos.currentPrice,
       isShort: pos.isShort,
       quantity: pos.quantity,
+      defaultSide: closingSide,
     });
     setTradeOpen(true);
   };
@@ -781,14 +784,21 @@ function TradeForm({
   groupId: number;
   cashBalance: number;
   sleeveValue: number;
-  prefill: null | { ticker: string; assetType: AssetType; price: number; isShort: boolean; quantity?: number };
+  prefill: null | { ticker: string; assetType: AssetType; price: number; isShort: boolean; quantity?: number; defaultSide?: TradeSide };
   onSuccess: () => void;
 }) {
+  // Determine initial side: use explicit defaultSide if provided, otherwise buy/short
+  const initialSide: TradeSide = prefill?.defaultSide ?? (prefill?.isShort ? "short" : "buy");
+  // Pre-fill quantity when closing a position (sell/cover) — user can adjust
+  const initialQty = (initialSide === "sell" || initialSide === "cover")
+    ? String(prefill?.quantity ?? "")
+    : "";
+
   const [form, setForm] = useState({
     ticker: prefill?.ticker || "",
     name: "",
-    side: (prefill?.isShort ? "short" : "buy") as TradeSide,
-    quantity: "",
+    side: initialSide,
+    quantity: initialQty,
     price: prefill?.price ? prefill.price.toFixed(2) : "",
     assetType: (prefill?.assetType || "stock") as AssetType,
     isShort: prefill?.isShort || false,

@@ -267,3 +267,19 @@ export const sessions = mysqlTable("sessions", {
 });
 
 export type Session = typeof sessions.$inferSelect;
+
+// ─── Cash Adjustments ─────────────────────────────────────────────────────────
+// Admin-initiated cash changes to a player's sleeve (bonuses, corrections, etc.)
+export const cashAdjustments = mysqlTable("cash_adjustments", {
+  id: int("id").autoincrement().primaryKey(),
+  sleeveId: int("sleeveId").notNull(),
+  groupId: int("groupId").notNull(),
+  userId: int("userId").notNull(),          // sleeve owner
+  adminId: int("adminId").notNull(),         // who made the adjustment
+  amount: decimal("amount", { precision: 18, scale: 2 }).notNull(), // positive = add, negative = deduct
+  reason: varchar("reason", { length: 512 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CashAdjustment = typeof cashAdjustments.$inferSelect;
+export type InsertCashAdjustment = typeof cashAdjustments.$inferInsert;

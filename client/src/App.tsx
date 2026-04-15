@@ -11,6 +11,7 @@ import JoinGroup from "./pages/JoinGroup";
 import GroupDashboard from "./pages/GroupDashboard";
 import SleeveManager from "./pages/SleeveManager";
 import AdminPanel from "./pages/AdminPanel";
+import AdminLedger from "./pages/AdminLedger";
 import AddEmail from "./pages/AddEmail";
 import { useAuth } from "./_core/hooks/useAuth";
 import { useEffect } from "react";
@@ -53,6 +54,7 @@ function Router() {
       <Route path="/group/:id" component={GroupDashboard} />
       <Route path="/group/:id/sleeve/:sleeveId" component={SleeveManager} />
       <Route path="/group/:id/admin" component={AdminPanel} />
+      <Route path="/group/:id/admin/ledger" component={AdminLedger} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

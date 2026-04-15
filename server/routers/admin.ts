@@ -1,3 +1,4 @@
+import { inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as db from "../db";
@@ -189,6 +190,102 @@ export const adminRouter = router({
       if (!membership) throw new TRPCError({ code: "FORBIDDEN", message: "Not a member of this group" });
 
       return db.getReallocationHistory(input.groupId);
+    }),
+
+  // ── Adjust cash for a player's sleeve ───────────────────────────────────────
+  adjustCash: protectedProcedure
+    .input(
+      z.object({
+        groupId: z.number(),
+        sleeveId: z.number(),
+        amount: z.number().refine((v) => v !== 0, { message: "Amount cannot be zero" }),
+        reason: z.string().min(1).max(512),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const membership = await db.getGroupMembership(input.groupId, ctx.user.id);
+      if (!membership || membership.role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Only group admins can adjust cash" });
+      }
+
+      const sleeve = await db.getSleeveById(input.sleeveId);
+      if (!sleeve || sleeve.groupId !== input.groupId) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Sleeve not found in this group" });
+      }
+
+      const currentCash = parseFloat(sleeve.cashBalance);
+      const currentTotal = parseFloat(sleeve.totalValue);
+      const currentAlloc = parseFloat(sleeve.allocatedCapital);
+      const newCash = currentCash + input.amount;
+      const newTotal = currentTotal + input.amount;
+      const newAlloc = currentAlloc + input.amount;
+
+      if (newCash < 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Deduction of $${Math.abs(input.amount).toLocaleString()} would result in negative cash balance ($${newCash.toLocaleString()})`,
+        });
+      }
+
+      // Apply to sleeve
+      await db.updateSleeve(input.sleeveId, {
+        cashBalance: String(newCash),
+        totalValue: String(newTotal),
+        allocatedCapital: String(newAlloc),
+      });
+
+      // Persist audit record
+      await db.createCashAdjustment({
+        sleeveId: input.sleeveId,
+        groupId: input.groupId,
+        userId: sleeve.userId,
+        adminId: ctx.user.id,
+        amount: String(input.amount),
+        reason: input.reason,
+      });
+
+      return {
+        success: true,
+        previousCash: currentCash,
+        newCash,
+        amount: input.amount,
+      };
+    }),
+
+  // ── Activity ledger for a sleeve ─────────────────────────────────────────────
+  getActivityLedger: protectedProcedure
+    .input(z.object({ groupId: z.number(), sleeveId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      const membership = await db.getGroupMembership(input.groupId, ctx.user.id);
+      if (!membership || membership.role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Only group admins can view the activity ledger" });
+      }
+      return db.getActivityLedger(input.sleeveId, input.groupId);
+    }),
+
+  // ── Players overview (sleeves + users) for admin ──────────────────────────────
+  getPlayers: protectedProcedure
+    .input(z.object({ groupId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      const membership = await db.getGroupMembership(input.groupId, ctx.user.id);
+      if (!membership || membership.role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Only group admins can view players" });
+      }
+      const sleeves = await db.getSleevesForGroup(input.groupId);
+      const { getDb } = await import("../db");
+      const { users } = await import("../../drizzle/schema");
+      const drizzleDb = await getDb();
+      if (!drizzleDb) return [];
+      const userIds = sleeves.map((s) => s.userId);
+      const userRows = userIds.length > 0
+        ? await drizzleDb.select({ id: users.id, displayName: users.displayName, username: users.username, email: users.email }).from(users).where(inArray(users.id, userIds))
+        : [];
+      const userMap = new Map(userRows.map((u) => [u.id, u]));
+      return sleeves.map((s) => ({
+        ...s,
+        displayName: userMap.get(s.userId)?.displayName || userMap.get(s.userId)?.username || "Unknown",
+        email: userMap.get(s.userId)?.email || null,
+      }));
     }),
 
   // List all users (admin utility)

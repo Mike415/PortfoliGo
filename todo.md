@@ -278,3 +278,11 @@
 
 ## Max Button Enhancement (Round 31)
 - [x] Fix: Max button now works for all sides — buy/cover (Max based on cash), sell (All held qty), short (Max based on cash)
+
+## Admin Players & Ledger (Round N)
+- [x] Schema: cash_adjustments table (sleeveId, groupId, userId, adminId, amount, reason, createdAt)
+- [x] Backend: admin.adjustCash — add/deduct cash from a sleeve with audit record; blocks negative cash
+- [x] Backend: admin.getActivityLedger — unified feed of trades, challenge awards, reallocations, cash adjustments per sleeve
+- [x] Backend: admin.getPlayers — sleeves + displayName/email for admin overview
+- [x] Frontend: AdminLedger page (/group/:id/admin/ledger) — player cards with cash adjustment form + collapsible ledger tabs
+- [x] Frontend: AdminPanel header — "Players & Ledger" button linking to new page

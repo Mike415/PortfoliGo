@@ -382,6 +382,14 @@ export const challengesRouter = router({
       if (!challenge) throw new TRPCError({ code: "NOT_FOUND" });
       await assertGroupAdmin(challenge.groupId, ctx.user.id);
 
+      // ── Guard: block re-scoring once already completed ──────────────────────
+      if (challenge.status === "completed") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This challenge has already been scored and the bump awarded. Re-scoring is not allowed.",
+        });
+      }
+
       const entries = await drizzle
         .select()
         .from(challengeEntries)
@@ -696,6 +704,14 @@ export const challengesRouter = router({
 
       if (challenge.type !== "earnings") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Use the score procedure for conviction/sprint challenges" });
+      }
+
+      // ── Guard: block re-scoring once already completed ──────────────────────
+      if (challenge.status === "completed") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This challenge has already been scored and the bump awarded. Re-scoring is not allowed.",
+        });
       }
 
       const picks = await drizzle

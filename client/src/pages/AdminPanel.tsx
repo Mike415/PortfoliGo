@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Trophy, AlertTriangle, ChevronUp, ChevronDown, Clock, Settings, Trash2, Copy, Check, Calendar } from "lucide-react";
+import { ArrowLeft, Trophy, AlertTriangle, ChevronUp, ChevronDown, Clock, Settings, Trash2, Copy, Check, Calendar, Users, Activity } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -101,6 +101,17 @@ export default function AdminPanel() {
             <p className="text-xs text-muted-foreground mt-0.5">{group?.name}</p>
           </div>
           <Badge variant="outline" className="ml-2 text-xs text-primary border-primary/30">Admin</Badge>
+          <div className="ml-auto">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1.5"
+              onClick={() => setLocation(`/group/${groupId}/admin/ledger`)}
+            >
+              <Activity className="w-3.5 h-3.5" />
+              Players & Ledger
+            </Button>
+          </div>
         </div>
       </header>
 

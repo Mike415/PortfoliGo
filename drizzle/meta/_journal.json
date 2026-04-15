@@ -85,6 +85,13 @@
       "when": 1775145704151,
       "tag": "0011_tidy_doctor_octopus",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1776263362191,
+      "tag": "0012_wandering_anthem",
+      "breakpoints": true
     }
   ]
 }

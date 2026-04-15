@@ -2,6 +2,9 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { createPool } from "mysql2";
 import {
+  cashAdjustments,
+  challengeEntries,
+  challenges,
   groups,
   groupMembers,
   portfolioSnapshots,
@@ -13,6 +16,7 @@ import {
   sleeves,
   trades,
   users,
+  type InsertCashAdjustment,
   type InsertGroup,
   type InsertGroupMember,
   type InsertPortfolioSnapshot,
@@ -465,4 +469,99 @@ export async function upsertUser(data: {
   const db = await getDb();
   if (!db) return;
   await db.update(users).set({ lastSignedIn: data.lastSignedIn ?? new Date() }).where(eq(users.id, numericId));
+}
+
+// ─── Cash Adjustments ─────────────────────────────────────────────────────────
+
+export async function createCashAdjustment(data: InsertCashAdjustment) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(cashAdjustments).values(data);
+}
+
+export async function getCashAdjustmentsForSleeve(sleeveId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(cashAdjustments)
+    .where(eq(cashAdjustments.sleeveId, sleeveId))
+    .orderBy(desc(cashAdjustments.createdAt));
+}
+
+export async function getCashAdjustmentsForGroup(groupId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(cashAdjustments)
+    .where(eq(cashAdjustments.groupId, groupId))
+    .orderBy(desc(cashAdjustments.createdAt));
+}
+
+// ─── Activity Ledger ──────────────────────────────────────────────────────────
+// Unified activity feed for a sleeve: trades, challenge awards, reallocation
+// changes, and cash adjustments — sorted newest first.
+
+export async function getActivityLedger(sleeveId: number, groupId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  // 1. Trades (all, no limit for admin view)
+  const tradeRows = await db
+    .select()
+    .from(trades)
+    .where(eq(trades.sleeveId, sleeveId))
+    .orderBy(desc(trades.executedAt));
+
+  // 2. Challenge awards (won challenges for this sleeve)
+  const awardRows = await db
+    .select({
+      entryId: challengeEntries.id,
+      challengeId: challengeEntries.challengeId,
+      isWinner: challengeEntries.isWinner,
+      rank: challengeEntries.rank,
+      returnPct: challengeEntries.returnPct,
+      scoredAt: challengeEntries.scoredAt,
+      challengeName: challenges.name,
+      challengeType: challenges.type,
+      allocationBump: challenges.allocationBump,
+    })
+    .from(challengeEntries)
+    .innerJoin(challenges, eq(challenges.id, challengeEntries.challengeId))
+    .where(eq(challengeEntries.sleeveId, sleeveId))
+    .orderBy(desc(challengeEntries.scoredAt));
+
+  // 3. Reallocation changes for this sleeve
+  const reallocRows = await db
+    .select({
+      id: reallocationChanges.id,
+      eventId: reallocationChanges.eventId,
+      previousAllocation: reallocationChanges.previousAllocation,
+      newAllocation: reallocationChanges.newAllocation,
+      changeAmount: reallocationChanges.changeAmount,
+      returnPctAtTime: reallocationChanges.returnPctAtTime,
+      rank: reallocationChanges.rank,
+      createdAt: reallocationChanges.createdAt,
+      executedAt: reallocationEvents.executedAt,
+      notes: reallocationEvents.notes,
+    })
+    .from(reallocationChanges)
+    .innerJoin(reallocationEvents, eq(reallocationEvents.id, reallocationChanges.eventId))
+    .where(eq(reallocationChanges.sleeveId, sleeveId))
+    .orderBy(desc(reallocationEvents.executedAt));
+
+  // 4. Cash adjustments
+  const cashRows = await db
+    .select()
+    .from(cashAdjustments)
+    .where(eq(cashAdjustments.sleeveId, sleeveId))
+    .orderBy(desc(cashAdjustments.createdAt));
+
+  return {
+    trades: tradeRows,
+    awards: awardRows,
+    reallocations: reallocRows,
+    cashAdjustments: cashRows,
+  };
 }
