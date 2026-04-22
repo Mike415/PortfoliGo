@@ -204,7 +204,8 @@ export default function SleeveManager() {
       })
     : [{ date: "Now", isoDate: "", totalValue: sleeve.totalValue, spxReturn: null }];
 
-  // Portfolio return % from first snapshot (for right axis alignment with S&P)
+  // Normalize both portfolio and S&P to % return from the first snapshot date
+  // so they are directly comparable on the same axis.
   const firstValue = chartData.length > 1 ? chartData[0].totalValue : sleeve.allocatedCapital;
 
   const chartDataWithReturn = chartData.map((d) => ({
@@ -214,6 +215,18 @@ export default function SleeveManager() {
 
   const hasBenchmark = chartDataWithReturn.some((d) => d.spxReturn != null);
 
+  // Compute unified % return domain across both series for a single axis
+  const allReturns = chartDataWithReturn.flatMap((d) => [
+    d.portfolioReturn,
+    ...(d.spxReturn != null ? [d.spxReturn] : []),
+  ]);
+  const retMin = allReturns.length > 0 ? Math.min(...allReturns) : -5;
+  const retMax = allReturns.length > 0 ? Math.max(...allReturns) : 5;
+  const retPad = Math.max((retMax - retMin) * 0.1, 1);
+  const chartRetMin = retMin - retPad;
+  const chartRetMax = retMax + retPad;
+
+  // Keep dollar axis for tooltip context (not shown when benchmark present)
   const chartMin = chartData.length > 1
     ? Math.min(...chartData.map((d) => d.totalValue)) * 0.995
     : sleeve.allocatedCapital * 0.97;
@@ -414,26 +427,26 @@ export default function SleeveManager() {
                       axisLine={false}
                       interval="preserveStartEnd"
                     />
-                    {/* Left axis: portfolio dollar value */}
-                    <YAxis
-                      yAxisId="left"
-                      domain={[chartMin, chartMax]}
-                      tick={{ fontSize: 10 }}
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
-                      width={48}
-                    />
-                    {/* Right axis: % return (portfolio + S&P aligned) */}
-                    {hasBenchmark && (
+                    {/* When benchmark present: single % return axis; otherwise dollar axis */}
+                    {hasBenchmark ? (
                       <YAxis
-                        yAxisId="right"
-                        orientation="right"
+                        yAxisId="pct"
+                        domain={[chartRetMin, chartRetMax]}
                         tick={{ fontSize: 10 }}
                         tickLine={false}
                         axisLine={false}
                         tickFormatter={(v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`}
-                        width={44}
+                        width={48}
+                      />
+                    ) : (
+                      <YAxis
+                        yAxisId="left"
+                        domain={[chartMin, chartMax]}
+                        tick={{ fontSize: 10 }}
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                        width={48}
                       />
                     )}
                     <ChartTooltip
@@ -449,6 +462,15 @@ export default function SleeveManager() {
                                 "S&P 500",
                               ];
                             }
+                            if (name === "portfolioReturn") {
+                              const v = Number(value);
+                              return [
+                                <span key="port" className="font-mono font-bold" style={{ color: "oklch(0.65 0.18 250)" }}>
+                                  {v >= 0 ? "+" : ""}{v.toFixed(2)}%
+                                </span>,
+                                "Portfolio",
+                              ];
+                            }
                             return [
                               <span key="val" className="font-mono font-bold">{formatCurrency(Number(value))}</span>,
                               "Portfolio",
@@ -458,21 +480,21 @@ export default function SleeveManager() {
                         />
                       }
                     />
-                    {/* Portfolio area on left axis */}
+                    {/* Portfolio: % return when benchmark present, dollar value otherwise */}
                     <Area
-                      yAxisId="left"
+                      yAxisId={hasBenchmark ? "pct" : "left"}
                       type="monotone"
-                      dataKey="totalValue"
+                      dataKey={hasBenchmark ? "portfolioReturn" : "totalValue"}
                       stroke="oklch(0.65 0.18 250)"
                       strokeWidth={2}
                       fill="url(#equityGradient)"
                       dot={false}
                       activeDot={{ r: 4, strokeWidth: 0 }}
                     />
-                    {/* S&P 500 line on right axis */}
+                    {/* S&P 500 line on same % axis */}
                     {hasBenchmark && (
                       <Line
-                        yAxisId="right"
+                        yAxisId="pct"
                         type="monotone"
                         dataKey="spxReturn"
                         stroke="oklch(0.72 0.15 145)"

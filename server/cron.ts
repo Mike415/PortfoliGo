@@ -108,10 +108,11 @@ async function snapshotAllGroups() {
           const totalUnrealizedPnl = priceResults.reduce((s, r) => s + r.unrealizedPnl, 0);
           const cashBalance = parseFloat(sleeve.cashBalance);
           const allocatedCapital = parseFloat(sleeve.allocatedCapital);
+          const startingCapital = parseFloat(sleeve.startingCapital ?? sleeve.allocatedCapital);
           const totalValue = cashBalance + totalPositionsValue;
           const returnPct =
-            allocatedCapital !== 0
-              ? ((totalValue - allocatedCapital) / allocatedCapital) * 100
+            startingCapital !== 0
+              ? ((totalValue - startingCapital) / startingCapital) * 100
               : 0;
 
           await db.updateSleeve(sleeve.id, {

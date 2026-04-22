@@ -284,9 +284,12 @@ export const portfolioRouter = router({
       const totalUnrealizedPnl = priceResults.reduce((sum, r) => sum + r.unrealizedPnl, 0);
       const cashBalance = parseFloat(sleeve.cashBalance);
       const allocatedCapital = parseFloat(sleeve.allocatedCapital);
+      // Use startingCapital (set once at join, never changed by bumps) so challenge
+      // winners aren't penalised with a higher denominator in the return calculation.
+      const startingCapital = parseFloat(sleeve.startingCapital ?? sleeve.allocatedCapital);
       const totalValue = cashBalance + totalPositionsValue;
       const realizedPnl = parseFloat(sleeve.realizedPnl);
-      const returnPct = allocatedCapital !== 0 ? ((totalValue - allocatedCapital) / allocatedCapital) * 100 : 0;
+      const returnPct = startingCapital !== 0 ? ((totalValue - startingCapital) / startingCapital) * 100 : 0;
 
       await db.updateSleeve(sleeve.id, {
         positionsValue: String(totalPositionsValue),
@@ -684,8 +687,9 @@ export const portfolioRouter = router({
         const totalUnrealizedPnl = priceResults.reduce((sum, r) => sum + r.unrealizedPnl, 0);
         const cashBalance = parseFloat(sleeve.cashBalance);
         const allocatedCapital = parseFloat(sleeve.allocatedCapital);
+        const startingCapital = parseFloat(sleeve.startingCapital ?? sleeve.allocatedCapital);
         const totalValue = cashBalance + totalPositionsValue;
-        const returnPct = allocatedCapital !== 0 ? ((totalValue - allocatedCapital) / allocatedCapital) * 100 : 0;
+        const returnPct = startingCapital !== 0 ? ((totalValue - startingCapital) / startingCapital) * 100 : 0;
 
         await db.updateSleeve(sleeve.id, {
           positionsValue: String(totalPositionsValue),

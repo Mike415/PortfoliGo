@@ -88,6 +88,7 @@ export const groupRouter = router({
         userId: ctx.user.id,
         name: `${ctx.user.displayName || ctx.user.username}'s Sleeve`,
         allocatedCapital: String(sleeveSize),
+        startingCapital: String(sleeveSize),
         cashBalance: String(sleeveSize),
         totalValue: String(sleeveSize),
       });
@@ -137,6 +138,7 @@ export const groupRouter = router({
         userId: ctx.user.id,
         name: `${ctx.user.displayName || ctx.user.username}'s Sleeve`,
         allocatedCapital: String(group.sleeveSize),
+        startingCapital: String(group.sleeveSize),
         cashBalance: String(group.sleeveSize),
         totalValue: String(group.sleeveSize),
       });

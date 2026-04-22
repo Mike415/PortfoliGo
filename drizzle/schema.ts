@@ -68,6 +68,9 @@ export const sleeves = mysqlTable("sleeves", {
   userId: int("userId").notNull(),
   name: varchar("name", { length: 128 }),
   allocatedCapital: decimal("allocatedCapital", { precision: 18, scale: 2 }).notNull().default("200000.00"),
+  // startingCapital is set once at join time and never changed — used as the
+  // denominator for returnPct so challenge bumps don't distort performance ranking.
+  startingCapital: decimal("startingCapital", { precision: 18, scale: 2 }).notNull().default("200000.00"),
   cashBalance: decimal("cashBalance", { precision: 18, scale: 2 }).notNull().default("200000.00"),
   // Computed/cached fields updated on price refresh
   positionsValue: decimal("positionsValue", { precision: 18, scale: 2 }).notNull().default("0.00"),

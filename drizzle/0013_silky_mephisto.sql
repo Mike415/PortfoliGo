@@ -1,0 +1,1 @@
+ALTER TABLE `sleeves` ADD `startingCapital` decimal(18,2) DEFAULT '200000.00' NOT NULL;
