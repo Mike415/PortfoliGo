@@ -28,6 +28,8 @@ export default function AdminPanel() {
   const [confirming, setConfirming] = useState(false);
   const [editingEndDate, setEditingEndDate] = useState(false);
   const [endDateInput, setEndDateInput] = useState("");
+  const [fixCapitalInput, setFixCapitalInput] = useState("100000");
+  const [fixCapitalConfirming, setFixCapitalConfirming] = useState(false);
 
   const { data: preview, isLoading: previewLoading } = trpc.admin.previewReallocation.useQuery(
     { groupId },
@@ -65,6 +67,14 @@ export default function AdminPanel() {
   });
 
   const utils = trpc.useUtils();
+
+  const fixStartingCapitalMutation = trpc.admin.fixStartingCapital.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Fixed ${data.fixed} sleeve(s). Returns recalculated.`);
+      setFixCapitalConfirming(false);
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   const deleteMutation = trpc.group.delete.useMutation({
     onSuccess: () => {
@@ -352,6 +362,55 @@ export default function AdminPanel() {
                     ))}
                   </div>
                 ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Fix Starting Capital */}
+        <Card className="border-amber-500/30 bg-amber-500/5">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <Settings className="w-4 h-4 text-amber-500" />
+              <CardTitle className="text-base text-amber-500">Fix Starting Capital</CardTitle>
+            </div>
+            <CardDescription>
+              Override the starting capital used to calculate return % for all sleeves in this group. Use this if returns look wrong after a data migration.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!fixCapitalConfirming ? (
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={fixCapitalInput}
+                  onChange={(e) => setFixCapitalInput(e.target.value)}
+                  className="w-36 px-3 py-1.5 rounded border border-border bg-background text-sm"
+                  placeholder="100000"
+                />
+                <Button
+                  variant="outline"
+                  className="gap-2 border-amber-500/50 text-amber-500 hover:bg-amber-500/10"
+                  onClick={() => setFixCapitalConfirming(true)}
+                >
+                  Apply to All Sleeves
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Set startingCapital = <strong>${parseFloat(fixCapitalInput).toLocaleString()}</strong> for all sleeves and recalculate returns. Continue?
+                </p>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setFixCapitalConfirming(false)}>Cancel</Button>
+                  <Button
+                    className="bg-amber-500 text-black hover:bg-amber-400"
+                    disabled={fixStartingCapitalMutation.isPending}
+                    onClick={() => fixStartingCapitalMutation.mutate({ groupId, startingCapital: parseFloat(fixCapitalInput) })}
+                  >
+                    {fixStartingCapitalMutation.isPending ? "Fixing..." : "Confirm"}
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>

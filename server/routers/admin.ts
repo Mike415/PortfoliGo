@@ -288,6 +288,32 @@ export const adminRouter = router({
       }));
     }),
 
+  // One-time fix: set startingCapital for all sleeves in a group
+  fixStartingCapital: protectedProcedure
+    .input(z.object({ groupId: z.number(), startingCapital: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Admin only" });
+      }
+      const sleeves = await db.getSleevesForGroup(input.groupId);
+      if (sleeves.length === 0) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "No sleeves found for this group" });
+      }
+      const results = [];
+      for (const sleeve of sleeves) {
+        const totalValue = parseFloat(sleeve.totalValue);
+        const returnPct = input.startingCapital !== 0
+          ? ((totalValue - input.startingCapital) / input.startingCapital) * 100
+          : 0;
+        await db.updateSleeve(sleeve.id, {
+          startingCapital: String(input.startingCapital),
+          returnPct: String(returnPct),
+        });
+        results.push({ sleeveId: sleeve.id, totalValue, returnPct });
+      }
+      return { fixed: results.length, results };
+    }),
+
   // List all users (admin utility)
   listUsers: protectedProcedure.query(async ({ ctx }) => {
     if (ctx.user.role !== "admin") {
