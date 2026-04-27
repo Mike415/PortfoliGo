@@ -63,15 +63,20 @@ export const portfolioRouter = router({
         positions.map((p) => db.getPriceCacheEntry(p.ticker))
       );
 
+      const _startingCap1 = parseFloat(sleeve.startingCapital ?? sleeve.allocatedCapital);
+      const _totalVal1 = parseFloat(sleeve.totalValue);
+      const _returnPct1 = _startingCap1 !== 0 ? ((_totalVal1 - _startingCap1) / _startingCap1) * 100 : 0;
+
       return {
         ...sleeve,
         allocatedCapital: parseFloat(sleeve.allocatedCapital),
+        startingCapital: _startingCap1,
         cashBalance: parseFloat(sleeve.cashBalance),
         positionsValue: parseFloat(sleeve.positionsValue),
-        totalValue: parseFloat(sleeve.totalValue),
+        totalValue: _totalVal1,
         realizedPnl: parseFloat(sleeve.realizedPnl),
         unrealizedPnl: parseFloat(sleeve.unrealizedPnl),
-        returnPct: parseFloat(sleeve.returnPct),
+        returnPct: _returnPct1,
         positions: positions.map((p, i) => ({
           ...p,
           quantity: parseFloat(p.quantity),
@@ -106,15 +111,20 @@ export const portfolioRouter = router({
         positions.map((p) => db.getPriceCacheEntry(p.ticker))
       );
 
+      const _startingCap2 = parseFloat(sleeve.startingCapital ?? sleeve.allocatedCapital);
+      const _totalVal2 = parseFloat(sleeve.totalValue);
+      const _returnPct2 = _startingCap2 !== 0 ? ((_totalVal2 - _startingCap2) / _startingCap2) * 100 : 0;
+
       return {
         ...sleeve,
         allocatedCapital: parseFloat(sleeve.allocatedCapital),
+        startingCapital: _startingCap2,
         cashBalance: parseFloat(sleeve.cashBalance),
         positionsValue: parseFloat(sleeve.positionsValue),
-        totalValue: parseFloat(sleeve.totalValue),
+        totalValue: _totalVal2,
         realizedPnl: parseFloat(sleeve.realizedPnl),
         unrealizedPnl: parseFloat(sleeve.unrealizedPnl),
-        returnPct: parseFloat(sleeve.returnPct),
+        returnPct: _returnPct2,
         lastPricedAt: sleeve.lastPricedAt,
         isOwner,
         ownerDisplayName: owner?.displayName || owner?.username || "Unknown",
@@ -587,18 +597,24 @@ export const portfolioRouter = router({
       const entries = await Promise.all(
         sleeves.map(async (sleeve) => {
           const user = await db.getUserById(sleeve.userId);
+          const startingCap = parseFloat(sleeve.startingCapital ?? sleeve.allocatedCapital);
+          const totalVal = parseFloat(sleeve.totalValue);
+          // Always recompute returnPct from startingCapital so the cached DB value
+          // can't show stale/wrong numbers even before a price refresh.
+          const computedReturnPct = startingCap !== 0 ? ((totalVal - startingCap) / startingCap) * 100 : 0;
           return {
             sleeveId: sleeve.id,
             userId: sleeve.userId,
             username: user?.username || "Unknown",
             displayName: user?.displayName || user?.username || "Unknown",
             allocatedCapital: parseFloat(sleeve.allocatedCapital),
+            startingCapital: startingCap,
             cashBalance: parseFloat(sleeve.cashBalance),
             positionsValue: parseFloat(sleeve.positionsValue),
-            totalValue: parseFloat(sleeve.totalValue),
+            totalValue: totalVal,
             realizedPnl: parseFloat(sleeve.realizedPnl),
             unrealizedPnl: parseFloat(sleeve.unrealizedPnl),
-            returnPct: parseFloat(sleeve.returnPct),
+            returnPct: computedReturnPct,
             lastPricedAt: sleeve.lastPricedAt,
             isMe: sleeve.userId === ctx.user.id,
           };
@@ -610,8 +626,8 @@ export const portfolioRouter = router({
       const ranked = entries.map((e, i) => ({ ...e, rank: i + 1 }));
 
       const totalPortfolioValue = ranked.reduce((sum, e) => sum + e.totalValue, 0);
-      // Use sum of actual sleeve allocatedCapitals as the baseline (not group.totalCapital which may differ)
-      const startingCapital = ranked.reduce((sum, e) => sum + e.allocatedCapital, 0) || (group ? parseFloat(group.totalCapital) : 1000000);
+      // Use sum of startingCapitals as the group baseline (not allocatedCapital which includes bumps)
+      const startingCapital = ranked.reduce((sum, e) => sum + e.startingCapital, 0) || (group ? parseFloat(group.totalCapital) : 1000000);
 
       // Last refreshed = most recent lastPricedAt across all sleeves
       const lastRefreshed = ranked
